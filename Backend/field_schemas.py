@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
-
+# Modell zur Beschreibung eines Feldes
 class FieldDefinition(BaseModel):
     name: str
     type: str

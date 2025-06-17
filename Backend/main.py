@@ -9,6 +9,8 @@ from preview_generator import generate_dummy_data
 
 
 app = FastAPI()
+
+# CORS-Konfiguration (z. B. für Frontend auf Port 5173)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],  # oder ["*"] für Entwicklung
@@ -17,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# /api/v1/fields bleibt unverändert
 @app.post("/api/v1/fields")
 async def receive_fields(fields: List[FieldDefinition]):
     field_storage.save_fields(fields)
