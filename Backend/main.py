@@ -1,8 +1,12 @@
 from fastapi import FastAPI, Request
 from typing import List
-from field_schemas import FieldDefinition
+from field_schemas import FieldDefinition, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
+from io import StringIO
+from fastapi.responses import StreamingResponse
+from preview_generator import generate_dummy_data
+
 
 app = FastAPI()
 app.add_middleware(
@@ -24,12 +28,35 @@ async def list_fields():
     return field_storage.get_fields()
 
 
-@app.post("/api/my-endpoint")
-async def receive_data(request: Request):
-    data = await request.json() # 1. TO-DO: Json-Daten empfangen und in Variablen speichern. (in field_schemas)
-    print("Empfangene Daten:", data)
-    return {"status": "ok", "message": "Daten empfangen!"}
+@app.post("/api/export")
+async def export_csv(request: ExportRequest):
+    # Dummy-Daten generieren
+    df = generate_dummy_data(request.rows, request.rowCount)
+
+    # CSV konfigurieren
+    separator = "," if request.format.upper() == "CSV" else ";"
+    line_end = "\r\n" if "CRLF" in request.lineEnding.upper() else "\n"
+
+    csv_buffer = StringIO()
+    df.to_csv(csv_buffer, index=False, sep=separator, lineterminator=line_end)
+    csv_buffer.seek(0)
+
+    return StreamingResponse(
+        csv_buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=synthdata.csv"},
+    )
 
 
+# @app.post("/api/export")
+# async def export_debug(request: Request):
+#     body = await request.json()
+#     print("📦 Eingehende Rohdaten vom Frontend:")
+#     print(body)
+#     return {"status": "debug"}
+
+
+
+ 
 
 # 2. TO-DO CSV Export Funktion erstellen

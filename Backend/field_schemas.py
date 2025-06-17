@@ -1,9 +1,32 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 
 
 class FieldDefinition(BaseModel):
     name: str
     type: str
     dependency: Optional[str] = None
-    showinTable: Optional[bool] = True
+    DoNotShowinTable: Optional[bool] = False
+
+
+
+class DistributionConfig(BaseModel):
+    distribution: Optional[str] = None
+    parameterA: Optional[str] = None
+    parameterB: Optional[str] = None   
+
+
+# Neues Modell für das Frontend-POST /api/my-endpoint
+class FrontendField(BaseModel):
+    name: str
+    type: str
+    dependency: Optional[str] = None
+    DoNotShowInTable: bool  # Beachte: exakt wie im Frontend (großes "I")
+    distribution: Optional[DistributionConfig] = None
+
+
+class ExportRequest(BaseModel):
+    rows: List[FrontendField]
+    rowCount: int
+    format: str
+    lineEnding: str
