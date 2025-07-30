@@ -13,7 +13,8 @@ class FieldDefinition(BaseModel):
 class DistributionConfig(BaseModel):
     distribution: Optional[str] = None
     parameterA: Optional[str] = None
-    parameterB: Optional[str] = None   
+    parameterB: Optional[str] = None
+    extraParams: Optional[List[str]] = None   
 
 
 # Neues Modell für das Frontend-POST /api/my-endpoint
@@ -21,8 +22,7 @@ class FrontendField(BaseModel):
     name: str
     type: str
     dependency: Optional[str] = None
-    DoNotShowInTable: bool  # Beachte: exakt wie im Frontend (großes "I")
-    distribution: Optional[DistributionConfig] = None
+    distributionConfig: Optional[DistributionConfig] = None
 
 
 class ExportRequest(BaseModel):

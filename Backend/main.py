@@ -32,6 +32,7 @@ async def list_fields():
 
 @app.post("/api/export")
 async def export_csv(request: ExportRequest):
+    print(request)
     # Dummy-Daten generieren
     df = generate_dummy_data(request.rows, request.rowCount)
 
