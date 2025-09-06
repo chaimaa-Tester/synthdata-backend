@@ -44,7 +44,10 @@ def _maybe_as_text(seq, as_text: bool) -> list:
 def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_sheets: bool = False) -> pd.DataFrame:
     columns: dict[str, list] = {}
 
+    # 1. Alle Felder erzeugen die keine Abhängigkeit angegeben haben
     for field in fields:
+        if getattr(field, "dependency", None):
+            continue
         ftype = field.type.strip().lower() if field.type else ""
         dist_config = field.distributionConfig
         dist = dist_config.distribution.lower() if dist_config and dist_config.distribution else None
@@ -69,27 +72,7 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 data = np.random.choice(values, size=num_rows, p=norm_weights)
             else:
                 # Fallback für Strings
-                data = [fake.word() for _ in range(num_rows)]
-        dist = dist_config.distribution.lower() if (dist_config and dist_config.distribution) else None
-
-        # ---------- TEXTUAL TYPES ----------
-        if ftype in ("string", "text"):
-            data = [fake.word() for _ in range(num_rows)]
-
-        # ---------- INTEGER TYPES ----------
-        elif ftype in ("int", "integer"):
-            paramA = _to_float(dist_config.parameterA) if dist_config else None
-            paramB = _to_float(dist_config.parameterB) if dist_config else None
-            low = _to_int(paramA, 0)
-            high = _to_int(paramB, 100)
-            if high is None:
-                high = 100
-            if low is None:
-                low = 0
-            if high < low:
-                low, high = high, low
-            data = rng.integers(low, high + 1, size=num_rows).tolist()
-            data = _maybe_as_text(data, as_text_for_sheets)
+                data = [fake.uuid4() for _ in range(num_rows)]
 
         # ---------- FLOAT/DOUBLE TYPES ----------
         elif ftype in ("float", "double", "number", "numeric"):
@@ -172,23 +155,22 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
             else:
                 data = [fake.date() for _ in range(num_rows)]
 
-        # ---------- DATETIME/TIME/ID/EMAIL/NAME ----------
-        elif ftype in ("datetime",):
-            data = [fake.iso8601() for _ in range(num_rows)]
-        elif ftype in ("time",):
-            data = [fake.time() for _ in range(num_rows)]
-        elif ftype in ("uuid",):
-            data = [fake.uuid4() for _ in range(num_rows)]
-        elif ftype in ("email",):
-            data = [fake.email() for _ in range(num_rows)]
-        elif ftype in ("name",):
-            data = [fake.name() for _ in range(num_rows)]
-
         # ---------- FALLBACK ----------
         else:
             # Fallback für unbekannte Typen
             data = [f"{field.name}_{i}" for i in range(num_rows)]
 
         columns[field.name] = data
+
+    # 2. Alle Felder mit Abhängigkeit erzeugen    
+    for field in fields:
+        dep = getattr(field, "dependency", None)
+        if not dep:
+            continue
+        # Daten werden aus der in Abhängigkeit angegebenen Zeile kopiert
+        if dep in columns:
+            columns[field.name] = columns[dep].copy()
+        else:
+            columns[field.name] = [None] * num_rows
 
     return pd.DataFrame(columns)
