@@ -3,7 +3,8 @@ from typing import List
 from field_schemas import FieldDefinition, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
-from io import StringIO
+import io
+import pandas as pd
 from fastapi.responses import StreamingResponse
 from preview_generator import generate_dummy_data
 
@@ -40,19 +41,34 @@ async def export_csv(request: ExportRequest):
     # Dummy-Daten generieren
     df = generate_dummy_data(request.rows, request.rowCount)
 
-    # CSV konfigurieren
-    separator = "," if request.format.upper() == "CSV" else ";"
-    line_end = "\r\n" if "CRLF" in request.lineEnding.upper() else "\n"
+    if request.format.upper() == "XLSX":
+        # Mehrere Blätter unterstützen
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            # Beispiel: Ein Tabellenblatt "Sheet 1"
+            df.to_excel(writer, index=False, sheet_name="Sheet 1")
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=synthdatawizard.xlsx"},
+        )
+    else:
+        # CSV konfigurieren
+        separator = "," if request.format.upper() == "CSV" else ";"
+        line_end = "\r\n" if "CRLF" in request.lineEnding.upper() else "\n"
 
-    csv_buffer = StringIO()
-    df.to_csv(csv_buffer, index=False, sep=separator, lineterminator=line_end)
-    csv_buffer.seek(0)
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False, sep=separator, lineterminator=line_end)
+        csv_buffer.seek(0)
 
-    return StreamingResponse(
-        csv_buffer,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=synthdata.csv"},
-    )
+        return StreamingResponse(
+            csv_buffer,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=synthdata.csv"},
+        )
+         
+
 
 
 # @app.post("/api/export")
