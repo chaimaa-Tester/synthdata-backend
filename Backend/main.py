@@ -9,6 +9,10 @@ from preview_generator import generate_dummy_data
 
 
 app = FastAPI()
+@app.get("/")
+def root():
+    return {"message": "Backend läuft"}
+
 
 # CORS-Konfiguration (z. B. für Frontend auf Port 5173)
 app.add_middleware(
