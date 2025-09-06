@@ -72,7 +72,7 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 data = np.random.choice(values, size=num_rows, p=norm_weights)
             else:
                 # Fallback für Strings
-                data = [fake.uuid4() for _ in range(num_rows)]
+                data = [fake.word() for _ in range(num_rows)]
 
         # ---------- FLOAT/DOUBLE TYPES ----------
         elif ftype in ("float", "double", "number", "numeric"):
