@@ -168,7 +168,7 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 start_ord = start.toordinal()
                 end_ord = end.toordinal()
                 ordinals = rng.integers(start_ord, end_ord + 1, size=num_rows)
-                        data = [pd.Timestamp.fromordinal(int(o)).date().isoformat() for o in ordinals]
+                data = [pd.Timestamp.fromordinal(int(o)).date().isoformat() for o in ordinals]
             else:
                 data = [fake.date() for _ in range(num_rows)]
 
