@@ -35,7 +35,8 @@ def _maybe_as_text(seq, as_text: bool) -> list:
     out = []
     for v in seq:
         if isinstance(v, (int, float, np.integer, np.floating)):
-            out.append(f"'{v}")  # Apostroph schützt vor Datumskonvertierung
+            val_str = format(v, '.2f').replace('.', ',').lstrip("0")
+            out.append(f"'{val_str}")
         else:
             out.append(v)
     return out
@@ -79,31 +80,32 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
 
-            
             if dist == "normal":
                 mu = paramA if paramA is not None else 0.0
                 sigma = paramB if (paramB is not None and paramB > 0) else 1.0
                 arr = norm.rvs(loc=mu, scale=sigma, size=num_rows)
+
             elif dist == "uniform":
                 low = paramA if paramA is not None else 0.0
                 high = paramB if paramB is not None else 100.0
                 if high <= low:
                     high = low + 1.0
                 arr = uniform.rvs(loc=low, scale=high - low, size=num_rows)
+
             elif dist == "gamma":
                 shape = paramA or 1
                 scale = paramB or 1
-                data = gamma.rvs(a=shape, scale=scale, size=num_rows)
+                arr = gamma.rvs(a=shape, scale=scale, size=num_rows)
+
             elif dist == "lognormal":
                 mu = paramA or 0
                 sigma = paramB or 1
-                data = np.random.lognormal(mean=mu, sigma=sigma, size=num_rows)
+                arr = np.random.lognormal(mean=mu, sigma=sigma, size=num_rows)
+
             elif dist == "exponential":
                 rate = paramA or 1
-                data = np.random.exponential(scale=1/rate, size=num_rows)
-                shape = paramA if (paramA is not None and paramA > 0) else 1.0
-                scale = paramB if (paramB is not None and paramB > 0) else 1.0
-                arr = gamma.rvs(a=shape, scale=scale, size=num_rows)
+                arr = np.random.exponential(scale=1/rate, size=num_rows)
+
             else:
                 arr = uniform.rvs(loc=0.0, scale=1000.0, size=num_rows)
 
@@ -120,11 +122,13 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 low = int(paramA) if paramA is not None else 0
                 high = int(paramB) if paramB is not None else 100
                 data = [random.randint(low, high) for _ in range(num_rows)]
+                data = _maybe_as_text(data, as_text_for_sheets)
             elif dist == "normal":
                 mu = paramA or 0
                 sigma = paramB or 1
                 # Erzeuge normale Verteilung und runde auf ganze Zahlen
                 data = np.round(norm.rvs(loc=mu, scale=sigma, size=num_rows)).astype(int)
+                data = _maybe_as_text(data.tolist(), as_text_for_sheets)
             elif dist == "binomial": #'n' muss ≥ 0 und 'p' zwischen 0 und 1 sein.
                 n = int(paramA) if paramA is not None else 10
                 p = paramB or 0.5
@@ -133,11 +137,14 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 if not (0 <= p <= 1):
                     raise ValueError("'p' muss zwischen 0 und 1 sein.")
                 data = binom.rvs(n=n, p=p, size=num_rows)
+                data = _maybe_as_text(data.tolist(), as_text_for_sheets)
             elif dist == "poisson":
                 lam = paramA or 1
                 data = poisson.rvs(mu=lam, size=num_rows)
+                data = _maybe_as_text(data.tolist(), as_text_for_sheets)
             else:
                 data = [random.randint(100, 9999) for _ in range(num_rows)]
+                data = _maybe_as_text(data, as_text_for_sheets)
         
         elif ftype == "date":
             paramA = dist_config.parameterA if dist_config and dist_config.parameterA else None
