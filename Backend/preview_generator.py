@@ -86,7 +86,7 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
             else:
                 data = [fake.passport_gender() for _ in range(num_rows)]
 
-        elif ftype in ["körpergröße"]:
+        elif ftype in ["körpergröße", "float"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
 
