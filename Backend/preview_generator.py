@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from faker import Faker
 from scipy.stats import norm, uniform, gamma, poisson, binom
 import random
@@ -10,21 +10,21 @@ fake = Faker()
 rng = np.random.default_rng()
 
 
-def _to_int(value, default=None):
+def _to_int(value, default: Optional[int] = None) -> Optional[int]:
     try:
         return int(float(value))
     except (TypeError, ValueError):
         return default
 
 
-def _to_float(value, default=None):
+def _to_float(value, default: Optional[float] = None) -> Optional[float]:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
 
 
-def _split_list(s: str) -> list[str]:
+def _split_list(s: Optional[str]) -> list[str]:
     if not s:
         return []
     return [x.strip() for x in s.split(",") if x.strip()]
@@ -101,7 +101,7 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 high = paramB if paramB is not None else 100.0
                 if high <= low:
                     high = low + 1.0
-                arr = uniform.rvs(loc=low, scale=high - low, size=num_rows)
+                arr = rng.uniform(low, high, size = num_rows)
 
             # elif dist == "gamma":
             #     shape = paramA or 1
@@ -115,12 +115,12 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
             #     rate = paramA or 1
             #     arr = np.random.exponential(scale=1 / rate, size=num_rows)
             else:
-                arr = uniform.rvs(loc=0.0, scale=1000.0, size=num_rows)
+                arr = rng.uniform(low = 0.0, high = 100.0, size = num_rows)
 
             arr = np.round(np.asarray(arr, dtype=float), 2)
             data = _maybe_as_text(arr.tolist(), as_text_for_sheets)
 
-        elif ftype in ["int", "integer", "alter"]:
+        elif ftype in ["integer", "alter"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
 
