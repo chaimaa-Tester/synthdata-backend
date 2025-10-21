@@ -181,9 +181,3 @@ async def detect_distribution_column(
 #     print("📦 Eingehende Rohdaten vom Frontend:")
 #     print(body)
 #     return {"status": "debug"}
-
-
-
- 
-
-# 2. TO-DO CSV Export Funktion erstellen

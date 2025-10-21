@@ -1,12 +1,25 @@
 from typing import List, Optional
-from faker import Faker
+from mimesis import Person, Gender as MimesisGender  # mimesis statt faker
+from mimesis.enums import Locale
 from scipy.stats import norm, uniform, gamma, poisson, binom
 import random
 import pandas as pd
 import numpy as np
 from field_schemas import FrontendField, DistributionConfig
 
-fake = Faker()
+# mimesis Generatoren für verschiedene Sprachen
+person_generators = {
+    'german': Person(Locale.DE),
+    'english': Person(Locale.EN),
+    'french': Person(Locale.FR),
+    'spanish': Person(Locale.ES),
+    'turkish': Person(Locale.TR),
+    'russian': Person(Locale.RU),
+    'chinese': Person(Locale.ZH),
+    'japanese': Person(Locale.JA),
+    'italian': Person(Locale.IT)
+}
+
 rng = np.random.default_rng()
 
 
@@ -43,6 +56,11 @@ def _maybe_as_text(seq, as_text: bool) -> list:
     return out
 
 
+def _get_name_generator(nationality: str = 'german'):
+    """Holt den passenden Namen-Generator basierend auf Nationalität"""
+    return person_generators.get(nationality, person_generators['german'])
+
+
 def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_sheets: bool = False) -> pd.DataFrame:
     columns: dict[str, list] = {}
 
@@ -55,13 +73,17 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
         ftype = (field.type or "").strip().lower()
         dist_config = field.distributionConfig
         dist = (dist_config.distribution or "").strip().lower() if dist_config else ""
+        
+        # Nationalität aus dem Feld extrahieren (falls vorhanden)
+        nationality = getattr(field, 'nationality', 'german')
 
-        if ftype in ["name"]:
+        if ftype in ["name", "vorname", "nachname", "vollständigername"]:
             paramA = dist_config.parameterA if dist_config else None
             paramB = dist_config.parameterB if dist_config else None
+            person_gen = _get_name_generator(nationality)
 
             if dist == "categorical":
-                values = _split_list(paramA) or [fake.name() for _ in range(5)]
+                values = _split_list(paramA) or [person_gen.full_name() for _ in range(5)]
                 weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -69,14 +91,16 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 weights = weights / weights.sum()
                 data = np.random.choice(values, size=num_rows, p=weights).tolist()
             else:
-                data = [fake.name() for _ in range(num_rows)]
+                # Standard: Realistische Namen basierend auf Nationalität
+                data = [person_gen.full_name() for _ in range(num_rows)]
 
-        elif ftype in ["geschlecht"]:
+        elif ftype in ["geschlecht", "gender"]:
             paramA = dist_config.parameterA if dist_config else None
             paramB = dist_config.parameterB if dist_config else None
+            person_gen = _get_name_generator(nationality)
 
             if dist == "categorical":
-                values = _split_list(paramA) or [fake.passport_gender() for _ in range(5)]
+                values = _split_list(paramA) or ["M", "W", "D"]
                 weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -84,43 +108,39 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 weights = weights / weights.sum()
                 data = np.random.choice(values, size=num_rows, p=weights).tolist()
             else:
-                data = [fake.passport_gender() for _ in range(num_rows)]
+                # Realistische Geschlechter mit mimesis
+                data = []
+                for _ in range(num_rows):
+                    gender = person_gen.gender()
+                    # Anpassung an deutsche Bezeichnungen falls nötig
+                    if nationality == 'german':
+                        if gender == 'Male':
+                            data.append('M')
+                        elif gender == 'Female':
+                            data.append('W')
+                        else:
+                            data.append('D')
+                    else:
+                        data.append(gender[0])  # Erster Buchstabe
 
-        elif ftype in ["körpergröße", "float"]:
+        elif ftype in ["körpergröße", "float", "gewicht"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
-
-
-            # if dist == "normal":
-            #     mu = paramA or 0.0
-            #     sigma = paramB if (paramB and paramB > 0) else 1.0
-            #     arr = norm.rvs(loc=mu, scale=sigma, size=num_rows)
 
             if dist == "uniform":
                 low = paramA if paramA is not None else 0.0
                 high = paramB if paramB is not None else 100.0
                 if high <= low:
                     high = low + 1.0
-                arr = rng.uniform(low, high, size = num_rows)
+                arr = rng.uniform(low, high, size=num_rows)
 
-            # elif dist == "gamma":
-            #     shape = paramA or 1
-            #     scale = paramB or 1
-            #     arr = gamma.rvs(a=shape, scale=scale, size=num_rows)
-            # elif dist == "lognormal":
-            #     mu = paramA or 0
-            #     sigma = paramB or 1
-            #     arr = np.random.lognormal(mean=mu, sigma=sigma, size=num_rows)
-            # elif dist == "exponential":
-            #     rate = paramA or 1
-            #     arr = np.random.exponential(scale=1 / rate, size=num_rows)
             else:
-                arr = rng.uniform(low = 0.0, high = 100.0, size = num_rows)
+                arr = rng.uniform(low=0.0, high=100.0, size=num_rows)
 
             arr = np.round(np.asarray(arr, dtype=float), 2)
             data = _maybe_as_text(arr.tolist(), as_text_for_sheets)
 
-        elif ftype in ["integer", "alter"]:
+        elif ftype in ["integer", "alter", "plz", "hausnummer"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
 
@@ -131,25 +151,6 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                     high = low
                 data = [random.randint(low, high) for _ in range(num_rows)]
                 data = _maybe_as_text(data, as_text_for_sheets)
-            # elif dist == "normal":
-            #     mu = paramA or 0
-            #     sigma = paramB or 1
-            #     # Erzeuge normale Verteilung und runde auf ganze Zahlen
-            #     data = np.round(norm.rvs(loc=mu, scale=sigma, size=num_rows)).astype(int)
-            #     data = _maybe_as_text(data.tolist(), as_text_for_sheets)
-            # elif dist == "binomial": #'n' muss ≥ 0 und 'p' zwischen 0 und 1 sein.
-            #     n = int(paramA) if paramA is not None else 10
-            #     p = paramB or 0.5
-            #     if n < 0:
-            #         raise ValueError("'n' muss ≥ 0 sein.")
-            #     if not (0 <= p <= 1):
-            #         raise ValueError("'p' muss zwischen 0 und 1 sein.")
-            #     data = binom.rvs(n=n, p=p, size=num_rows)
-            #     data = _maybe_as_text(data.tolist(), as_text_for_sheets)
-            # elif dist == "poisson":
-            #     lam = float(paramA or 1)
-            #     data = poisson.rvs(mu=lam, size=num_rows).tolist()
-            #     data = _maybe_as_text(data.tolist(), as_text_for_sheets)
             else:
                 data = [random.randint(100, 9999) for _ in range(num_rows)]
                 data = _maybe_as_text(data, as_text_for_sheets)
@@ -166,6 +167,27 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
             ordinals = rng.integers(start_ord, end_ord + 1, size=num_rows)
             data = [pd.Timestamp.fromordinal(int(o)).date().isoformat() for o in ordinals]
 
+        elif ftype in ["adresse", "straße", "stadt", "land"]:
+            person_gen = _get_name_generator(nationality)
+            if ftype == "adresse":
+                data = [person_gen.address() for _ in range(num_rows)]
+            elif ftype == "straße":
+                data = [person_gen.street_name() for _ in range(num_rows)]
+            elif ftype == "stadt":
+                data = [person_gen.city() for _ in range(num_rows)]
+            elif ftype == "land":
+                data = [person_gen.country() for _ in range(num_rows)]
+            else:
+                data = [f"{field.name}_{i}" for i in range(num_rows)]
+
+        elif ftype in ["email", "e-mail"]:
+            person_gen = _get_name_generator(nationality)
+            data = [person_gen.email() for _ in range(num_rows)]
+
+        elif ftype in ["telefon", "handynummer"]:
+            person_gen = _get_name_generator(nationality)
+            data = [person_gen.telephone() for _ in range(num_rows)]
+
         else:
             data = [f"{field.name}_{i}" for i in range(num_rows)]
 
@@ -174,35 +196,38 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
     # 2) Abhängige Felder verarbeiten (Dependency nutzen)
     for field in dependent_fields:
         dep = (field.dependency or "").strip()
-        # wenn Dependency fehlt oder leer, Fallback wie bisher
+        nationality = getattr(field, 'nationality', 'german')
+        
         if not dep:
             columns[field.name] = [f"{field.name}_{i}" for i in range(num_rows)]
             continue
 
         if dep not in columns:
-            # Dependency nicht gefunden => None-Füllung als Signal
             columns[field.name] = [None] * num_rows
             continue
         
         dep_values = columns[dep]
         ftype = (field.type or "").strip().lower()
 
-        if ftype in ["name"]:
-            # Erzeuge Namen passend zum Geschlecht in dep_values
+        if ftype in ["name", "vorname"]:
+            person_gen = _get_name_generator(nationality)
             data = []
             for gv in dep_values:
                 g = (gv or "").strip().lower()
-                if g.startswith("m"):
-                    first = fake.first_name_male()
-                elif g.startswith("w"):
-                    first = fake.first_name_female()
+                if g in ["m", "male", "männlich"]:
+                    first = person_gen.first_name(gender=MimesisGender.MALE)
+                elif g in ["w", "f", "female", "weiblich"]:
+                    first = person_gen.first_name(gender=MimesisGender.FEMALE)
                 else:
-                    first = fake.first_name()
-                last = fake.last_name()
-                data.append(f"{first} {last}")
+                    first = person_gen.first_name()
+                
+                if ftype == "vorname":
+                    data.append(first)
+                else:
+                    last = person_gen.last_name()
+                    data.append(f"{first} {last}")
             columns[field.name] = data
         else:
-            # Default: Werte aus dem referenzierten Feld übernehmen
             columns[field.name] = list(dep_values)
 
     return pd.DataFrame(columns)
