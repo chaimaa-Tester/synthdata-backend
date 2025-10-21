@@ -54,6 +54,47 @@ async def export_csv(request: ExportRequest):
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": "attachment; filename=synthdatawizard.xlsx"},
         )
+    elif request.format.upper() == "JSON":
+        # JSON (pretty, records)
+        json_text = df.to_json(orient="records", force_ascii=False, indent=2)
+        json_buffer = io.StringIO(json_text)
+        json_buffer.seek(0)
+        return StreamingResponse(
+            json_buffer,
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=synthdata.json"},
+        )
+    
+    elif request.format.upper() == "SQL":
+        # SQL: einfache INSERT INTO Statements
+        table_name = getattr(request, "tableName", None) or getattr(request, "table_name", None) or "synthdata"
+
+        def format_value(v):
+            if pd.isna(v):
+                return "NULL"
+            if isinstance(v, bool):
+                return "1" if v else "0"
+            if isinstance(v, (int,)):
+                return str(v)
+            if isinstance(v, float):
+                return str(v)
+            s = str(v).replace("'", "''")
+            return f"'{s}'"
+
+        cols = ", ".join([f'"{c}"' for c in df.columns])
+        statements = []
+        for _, row in df.iterrows():
+            vals = ", ".join(format_value(row[c]) for c in df.columns)
+            statements.append(f"INSERT INTO \"{table_name}\" ({cols}) VALUES ({vals});")
+
+        sql_text = "\n".join(statements)
+        sql_buffer = io.StringIO(sql_text)
+        sql_buffer.seek(0)
+        return StreamingResponse(
+            sql_buffer,
+            media_type="application/sql",
+            headers={"Content-Disposition": f"attachment; filename={table_name}.sql"},
+        )
     else:
         # CSV konfigurieren
         separator = "," if request.format.upper() == "CSV" else ";"
