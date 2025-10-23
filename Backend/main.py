@@ -55,9 +55,10 @@ async def export_csv(request: ExportRequest):
             headers={"Content-Disposition": "attachment; filename=synthdatawizard.xlsx"},
         )
     elif request.format.upper() == "JSON":
-        # JSON (pretty, records)
-        json_text = df.to_json(orient="records", force_ascii=False, indent=2)
-        json_buffer = io.StringIO(json_text)
+        # JSON (pretty, records) — use BytesIO and proper media type to ensure a .json download
+        json_str = df.to_json(orient="records", force_ascii=False, indent=2)
+        json_bytes = json_str.encode("utf-8")
+        json_buffer = io.BytesIO(json_bytes)        
         json_buffer.seek(0)
         return StreamingResponse(
             json_buffer,
@@ -65,39 +66,39 @@ async def export_csv(request: ExportRequest):
             headers={"Content-Disposition": "attachment; filename=synthdata.json"},
         )
     
-    elif request.format.upper() == "SQL":
-        # SQL: einfache INSERT INTO Statements
-        table_name = getattr(request, "tableName", None) or getattr(request, "table_name", None) or "synthdata"
+    # elif request.format.upper() == "SQL":
+    #     # SQL: einfache INSERT INTO Statements
+    #     table_name = getattr(request, "tableName", None) or getattr(request, "table_name", None) or "synthdata"
 
-        def format_value(v):
-            if pd.isna(v):
-                return "NULL"
-            if isinstance(v, bool):
-                return "1" if v else "0"
-            if isinstance(v, (int,)):
-                return str(v)
-            if isinstance(v, float):
-                return str(v)
-            s = str(v).replace("'", "''")
-            return f"'{s}'"
+    #     def format_value(v):
+    #         if pd.isna(v):
+    #             return "NULL"
+    #         if isinstance(v, bool):
+    #             return "1" if v else "0"
+    #         if isinstance(v, (int,)):
+    #             return str(v)
+    #         if isinstance(v, float):
+    #             return str(v)
+    #         s = str(v).replace("'", "''")
+    #         return f"'{s}'"
 
-        cols = ", ".join([f'"{c}"' for c in df.columns])
-        statements = []
-        for _, row in df.iterrows():
-            vals = ", ".join(format_value(row[c]) for c in df.columns)
-            statements.append(f"INSERT INTO \"{table_name}\" ({cols}) VALUES ({vals});")
+    #     cols = ", ".join([f'"{c}"' for c in df.columns])
+    #     statements = []
+    #     for _, row in df.iterrows():
+    #         vals = ", ".join(format_value(row[c]) for c in df.columns)
+    #         statements.append(f"INSERT INTO \"{table_name}\" ({cols}) VALUES ({vals});")
 
-        sql_text = "\n".join(statements)
-        sql_buffer = io.StringIO(sql_text)
-        sql_buffer.seek(0)
-        return StreamingResponse(
-            sql_buffer,
-            media_type="application/sql",
-            headers={"Content-Disposition": f"attachment; filename={table_name}.sql"},
-        )
-    else:
+    #     sql_text = "\n".join(statements)
+    #     sql_buffer = io.StringIO(sql_text)
+    #     sql_buffer.seek(0)
+    #     return StreamingResponse(
+    #         sql_buffer,
+    #         media_type="application/sql",
+    #         headers={"Content-Disposition": f"attachment; filename={table_name}.sql"},
+    #     )
+    elif request.format.upper() == "CSV":
         # CSV konfigurieren
-        separator = "," if request.format.upper() == "CSV" else ";"
+        separator = ","
         line_end = "\r\n" if "CRLF" in request.lineEnding.upper() else "\n"
 
         csv_buffer = io.StringIO()
@@ -213,12 +214,3 @@ async def detect_distribution_column(
         },
         "distribution_curves": dist_curves,
     }
-
-
-
-# @app.post("/api/export")
-# async def export_debug(request: Request):
-#     body = await request.json()
-#     print("📦 Eingehende Rohdaten vom Frontend:")
-#     print(body)
-#     return {"status": "debug"}
