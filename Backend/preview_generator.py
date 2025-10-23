@@ -7,18 +7,8 @@ import pandas as pd
 import numpy as np
 from field_schemas import FrontendField, DistributionConfig
 
-# mimesis Generatoren für verschiedene Sprachen
-person_generators = {
-    'german': Person(Locale.DE),
-    'english': Person(Locale.EN),
-    'french': Person(Locale.FR),
-    'spanish': Person(Locale.ES),
-    'turkish': Person(Locale.TR),
-    'russian': Person(Locale.RU),
-    'chinese': Person(Locale.ZH),
-    'japanese': Person(Locale.JA),
-    'italian': Person(Locale.IT)
-}
+# Deutscher mimesis Generator für bessere Namen und Geschlechts-Konsistenz
+person_gen = Person(Locale.DE)
 
 rng = np.random.default_rng()
 
@@ -56,11 +46,6 @@ def _maybe_as_text(seq, as_text: bool) -> list:
     return out
 
 
-def _get_name_generator(nationality: str = 'german'):
-    """Holt den passenden Namen-Generator basierend auf Nationalität"""
-    return person_generators.get(nationality, person_generators['german'])
-
-
 def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_sheets: bool = False) -> pd.DataFrame:
     columns: dict[str, list] = {}
 
@@ -73,17 +58,19 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
         ftype = (field.type or "").strip().lower()
         dist_config = field.distributionConfig
         dist = (dist_config.distribution or "").strip().lower() if dist_config else ""
-        
-        # Nationalität aus dem Feld extrahieren (falls vorhanden)
-        nationality = getattr(field, 'nationality', 'german')
 
-        if ftype in ["name", "vorname", "nachname", "vollständigername"]:
+        if ftype in ["name", "vorname", "nachname"]:
             paramA = dist_config.parameterA if dist_config else None
             paramB = dist_config.parameterB if dist_config else None
-            person_gen = _get_name_generator(nationality)
 
             if dist == "categorical":
-                values = _split_list(paramA) or [person_gen.full_name() for _ in range(5)]
+                if ftype == "vorname":
+                    values = _split_list(paramA) or [person_gen.first_name() for _ in range(5)]
+                elif ftype == "nachname":
+                    values = _split_list(paramA) or [person_gen.last_name() for _ in range(5)]
+                else:  # "name" = vollständiger Name
+                    values = _split_list(paramA) or [person_gen.full_name() for _ in range(5)]
+                
                 weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -91,16 +78,20 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 weights = weights / weights.sum()
                 data = np.random.choice(values, size=num_rows, p=weights).tolist()
             else:
-                # Standard: Realistische Namen basierend auf Nationalität
-                data = [person_gen.full_name() for _ in range(num_rows)]
+                # Standard: Realistische Namen je nach Typ
+                if ftype == "vorname":
+                    data = [person_gen.first_name() for _ in range(num_rows)]
+                elif ftype == "nachname":
+                    data = [person_gen.last_name() for _ in range(num_rows)]
+                else:  # "name" = vollständiger Name
+                    data = [person_gen.full_name() for _ in range(num_rows)]
 
         elif ftype in ["geschlecht", "gender"]:
             paramA = dist_config.parameterA if dist_config else None
             paramB = dist_config.parameterB if dist_config else None
-            person_gen = _get_name_generator(nationality)
 
             if dist == "categorical":
-                values = _split_list(paramA) or ["M", "W", "D"]
+                values = _split_list(paramA) or ["M", "W"]
                 weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -108,20 +99,8 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 weights = weights / weights.sum()
                 data = np.random.choice(values, size=num_rows, p=weights).tolist()
             else:
-                # Realistische Geschlechter mit mimesis
-                data = []
-                for _ in range(num_rows):
-                    gender = person_gen.gender()
-                    # Anpassung an deutsche Bezeichnungen falls nötig
-                    if nationality == 'german':
-                        if gender == 'Male':
-                            data.append('M')
-                        elif gender == 'Female':
-                            data.append('W')
-                        else:
-                            data.append('D')
-                    else:
-                        data.append(gender[0])  # Erster Buchstabe
+                # BESTE LÖSUNG: Direkte 50/50 Verteilung M/W - zuverlässig und logisch
+                data = [random.choice(['M', 'W']) for _ in range(num_rows)]
 
         elif ftype in ["körpergröße", "float", "gewicht"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
@@ -168,7 +147,6 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
             data = [pd.Timestamp.fromordinal(int(o)).date().isoformat() for o in ordinals]
 
         elif ftype in ["adresse", "straße", "stadt", "land"]:
-            person_gen = _get_name_generator(nationality)
             if ftype == "adresse":
                 data = [person_gen.address() for _ in range(num_rows)]
             elif ftype == "straße":
@@ -181,11 +159,9 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                 data = [f"{field.name}_{i}" for i in range(num_rows)]
 
         elif ftype in ["email", "e-mail"]:
-            person_gen = _get_name_generator(nationality)
             data = [person_gen.email() for _ in range(num_rows)]
 
         elif ftype in ["telefon", "handynummer"]:
-            person_gen = _get_name_generator(nationality)
             data = [person_gen.telephone() for _ in range(num_rows)]
 
         else:
@@ -196,7 +172,6 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
     # 2) Abhängige Felder verarbeiten (Dependency nutzen)
     for field in dependent_fields:
         dep = (field.dependency or "").strip()
-        nationality = getattr(field, 'nationality', 'german')
         
         if not dep:
             columns[field.name] = [f"{field.name}_{i}" for i in range(num_rows)]
@@ -209,23 +184,43 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
         dep_values = columns[dep]
         ftype = (field.type or "").strip().lower()
 
-        if ftype in ["name", "vorname"]:
-            person_gen = _get_name_generator(nationality)
+        if ftype in ["name", "vorname", "nachname"]:
             data = []
             for gv in dep_values:
-                g = (gv or "").strip().lower()
-                if g in ["m", "male", "männlich"]:
-                    first = person_gen.first_name(gender=MimesisGender.MALE)
-                elif g in ["w", "f", "female", "weiblich"]:
-                    first = person_gen.first_name(gender=MimesisGender.FEMALE)
-                else:
-                    first = person_gen.first_name()
+                g = (gv or "").strip().upper()  # GROSSBUCHSTABEN für bessere Erkennung
                 
-                if ftype == "vorname":
-                    data.append(first)
+                if g == "M":  # Nur exakte M Erkennung
+                    if ftype == "vorname":
+                        data.append(person_gen.first_name(gender=MimesisGender.MALE))
+                    elif ftype == "nachname":
+                        data.append(person_gen.last_name())
+                    else:  # "name" = vollständiger Name
+                        first = person_gen.first_name(gender=MimesisGender.MALE)
+                        last = person_gen.last_name()
+                        data.append(f"{first} {last}")
+                        
+                elif g == "W":  # Nur exakte W Erkennung
+                    if ftype == "vorname":
+                        data.append(person_gen.first_name(gender=MimesisGender.FEMALE))
+                    elif ftype == "nachname":
+                        data.append(person_gen.last_name())
+                    else:  # "name" = vollständiger Name
+                        first = person_gen.first_name(gender=MimesisGender.FEMALE)
+                        last = person_gen.last_name()
+                        data.append(f"{first} {last}")
+                        
                 else:
-                    last = person_gen.last_name()
-                    data.append(f"{first} {last}")
+                    # FALLBACK: Bei unbekannten Werten -> Default WEIBLICH (oder Fehler-Behandlung)
+                    print(f"WARNUNG: Unbekanntes Geschlecht '{gv}', verwende weiblich als Fallback")
+                    if ftype == "vorname":
+                        data.append(person_gen.first_name(gender=MimesisGender.FEMALE))
+                    elif ftype == "nachname":
+                        data.append(person_gen.last_name())
+                    else:  # "name" = vollständiger Name
+                        first = person_gen.first_name(gender=MimesisGender.FEMALE)
+                        last = person_gen.last_name()
+                        data.append(f"{first} {last}")
+                        
             columns[field.name] = data
         else:
             columns[field.name] = list(dep_values)
