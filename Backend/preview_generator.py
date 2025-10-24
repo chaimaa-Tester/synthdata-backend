@@ -222,6 +222,7 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
                         data.append(person_gen.last_name())
                     else:  # "name" = vollständiger Name
                         first = person_gen.first_name()
+                        last = person_gen.last_name()
                         data.append(f"{first} {last}")
                         
             columns[field.name] = data
