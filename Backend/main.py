@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from typing import List
+from pydantic import BaseModel
 from field_schemas import FieldDefinition, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
@@ -183,7 +184,70 @@ async def detect_distribution_column(
 #     return {"status": "debug"}
 
 
+# ==== Custom Distribution Fitting API ====
+class DistributionFitRequest(BaseModel):
+    points: list[float]
 
- 
 
-# 2. TO-DO CSV Export Funktion erstellen
+@app.post("/api/fit-distribution")
+async def fit_distribution(request: DistributionFitRequest):
+    points = np.array(request.points, dtype=float)
+    # Remove NaN/infinite
+    points = points[np.isfinite(points)]
+    if len(points) < 2:
+        return JSONResponse(status_code=400, content={"error": "Not enough points"})
+    # Normalize to [0, 1]
+    min_val = np.min(points)
+    max_val = np.max(points)
+    if max_val - min_val > 0:
+        norm_points = (points - min_val) / (max_val - min_val)
+    else:
+        norm_points = np.zeros_like(points)
+
+    # List of distributions to test
+    candidates = {
+        "norm": stats.norm,
+        "lognorm": stats.lognorm,
+        "expon": stats.expon,
+        "gamma": stats.gamma,
+        "beta": stats.beta,
+        "uniform": stats.uniform,
+    }
+    results = {}
+    best_fit = None
+    best_p = -np.inf
+    best_params = None
+    for name, dist in candidates.items():
+        try:
+            params = dist.fit(norm_points)
+            D, p = stats.kstest(norm_points, dist.name, args=params)
+            results[name] = {
+                "parameters": [float(x) for x in params],
+                "p_value": float(p),
+            }
+            if p > best_p:
+                best_p = p
+                best_fit = name
+                best_params = [float(x) for x in params]
+        except Exception:
+            continue
+
+    x_fit = np.linspace(0, 1, 100)
+    y_fit = []
+    if best_fit is not None and best_params is not None:
+        dist = candidates[best_fit]
+        try:
+            y_fit = dist.pdf(x_fit, *best_params)
+        except Exception:
+            y_fit = []
+
+    return {
+        "best_distribution": best_fit,
+        "p_value": float(best_p),
+        "parameters": best_params if best_params is not None else [],
+        "all_results": results,
+        "fit_curve": {
+            "x": x_fit.tolist(),
+            "y": y_fit.tolist() if hasattr(y_fit, "tolist") else [],
+        },
+    }
