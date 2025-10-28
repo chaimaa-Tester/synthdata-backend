@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import io
 import pandas as pd
 from fastapi.responses import StreamingResponse, JSONResponse
-from preview_generator import generate_dummy_data
+from generator_health import generate_healthData
+from generator_finance import generate_financeData
+from generator_logistic import generate_logisticData
 from scipy import stats
 import numpy as np
 
@@ -39,8 +41,14 @@ async def list_fields():
 @app.post("/api/export")
 async def export_csv(request: ExportRequest):
     print(request)
-    # Dummy-Daten generieren
-    df = generate_dummy_data(request.rows, request.rowCount)
+    usedUseCaseIds = request.usedUseCaseIds
+    for ucid in usedUseCaseIds:
+        if ucid.lower() == "containerlogistik":
+            df = generate_logisticData(request.rows, request.rowCount)
+        elif ucid.lower() == "gesundheit":
+            df = generate_healthData(request.rows, request.rowCount)
+        elif ucid.lower() == "finanzen":
+            df = generate_financeData(request.rows, request.rowCount)
 
     if request.format.upper() == "XLSX":
         # Mehrere Blätter unterstützen
