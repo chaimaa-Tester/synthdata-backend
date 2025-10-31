@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Request, UploadFile, File, Form
-from typing import List
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from typing import List, Literal
 from field_schemas import FieldDefinition, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,17 +37,19 @@ async def receive_fields(fields: List[FieldDefinition]):
 async def list_fields():
     return field_storage.get_fields()
 
+# # SQL Dialekt-Typen als Konstanten
+# SUPPORTED_SQL_DIALECTS = Literal["mysql", "postgresql"]
 
 @app.post("/api/export")
 async def export_csv(request: ExportRequest):
     print(request)
     usedUseCaseIds = request.usedUseCaseIds
     for ucid in usedUseCaseIds:
-        if ucid.lower() == "containerlogistik":
+       if ucid.lower() == "containerlogistik":
             df = generate_logisticData(request.rows, request.rowCount)
-        elif ucid.lower() == "gesundheit":
+       elif ucid.lower() == "gesundheit":
             df = generate_healthData(request.rows, request.rowCount)
-        elif ucid.lower() == "finanzen":
+       elif ucid.lower() == "finanzen":
             df = generate_financeData(request.rows, request.rowCount)
 
     if request.format.upper() == "XLSX":
@@ -62,6 +64,7 @@ async def export_csv(request: ExportRequest):
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": "attachment; filename=synthdatawizard.xlsx"},
         )
+    
     elif request.format.upper() == "JSON":
         # JSON (pretty, records) — use BytesIO and proper media type to ensure a .json download
         json_str = df.to_json(orient="records", force_ascii=False, indent=2)
@@ -75,35 +78,65 @@ async def export_csv(request: ExportRequest):
         )
     
     # elif request.format.upper() == "SQL":
-    #     # SQL: einfache INSERT INTO Statements
-    #     table_name = getattr(request, "tableName", None) or getattr(request, "table_name", None) or "synthdata"
+    #     # Validierung der SQL-Konfiguration
+    #     if not request.sqlConfig:
+    #         raise HTTPException(status_code=400, detail="SQL-Konfiguration fehlt")
 
-    #     def format_value(v):
-    #         if pd.isna(v):
-    #             return "NULL"
-    #         if isinstance(v, bool):
-    #             return "1" if v else "0"
-    #         if isinstance(v, (int,)):
-    #             return str(v)
-    #         if isinstance(v, float):
-    #             return str(v)
-    #         s = str(v).replace("'", "''")
-    #         return f"'{s}'"
+    #     table_name = request.sqlConfig.get("tableName", "synthetic_data")
+    #     sql_dialect = request.sqlConfig.get("dialect", "mysql").lower()
 
-    #     cols = ", ".join([f'"{c}"' for c in df.columns])
-    #     statements = []
-    #     for _, row in df.iterrows():
-    #         vals = ", ".join(format_value(row[c]) for c in df.columns)
-    #         statements.append(f"INSERT INTO \"{table_name}\" ({cols}) VALUES ({vals});")
+    #     # Überprüfung des SQL-Dialekts
+    #     if sql_dialect not in ["mysql", "postgresql"]:
+    #         raise HTTPException(
+    #             status_code=400, 
+    #             detail=f"Nicht unterstützter SQL-Dialekt: {sql_dialect}"
+    #         )
 
-    #     sql_text = "\n".join(statements)
-    #     sql_buffer = io.StringIO(sql_text)
-    #     sql_buffer.seek(0)
-    #     return StreamingResponse(
-    #         sql_buffer,
-    #         media_type="application/sql",
-    #         headers={"Content-Disposition": f"attachment; filename={table_name}.sql"},
-    #     )
+    #     output = io.StringIO()
+
+    #     # Tabellen-Create-Statement
+    #     try:
+    #         if sql_dialect == "mysql":
+    #             create_table = generate_mysql_table(df, table_name)
+    #         else:
+    #             create_table = generate_postgresql_table(df, table_name)
+
+    #         output.write(f"{create_table}\n\n")
+
+    #         # Werte korrekt für SQL formatieren
+    #         def escape_sql_value(v):
+    #             if pd.isna(v):
+    #                 return "NULL"
+    #             if isinstance(v, (int, float)):
+    #                 return str(v)
+    #             s = str(v).replace("'", "''")  # einfache Quotes escapen
+    #             return f"'{s}'"
+
+    #         # Spaltennamen je nach SQL-Dialekt
+    #         if sql_dialect == "mysql":
+    #             column_names = ", ".join([f"`{col}`" for col in df.columns])
+    #         else:
+    #             column_names = ", ".join([f'"{col}"' for col in df.columns])
+
+    #         # INSERT-Befehle
+    #         for _, row in df.iterrows():
+    #             values = [escape_sql_value(v) for v in row]
+    #             value_string = ", ".join(values)
+    #             output.write(f"INSERT INTO {table_name} ({column_names}) VALUES ({value_string});\n")
+
+    #         output.seek(0)
+
+    #         return StreamingResponse(
+    #             output,
+    #             media_type="application/sql",
+    #             headers={"Content-Disposition": f"attachment; filename={table_name}.sql"},
+    #         )
+    #     except Exception as e:
+    #         raise HTTPException(
+    #             status_code=500,
+    #             detail=f"Fehler beim Generieren des SQL-Exports: {str(e)}"
+    #         )
+        
     elif request.format.upper() == "CSV":
         # CSV konfigurieren
         separator = ","
