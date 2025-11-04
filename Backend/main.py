@@ -43,20 +43,15 @@ async def list_fields():
 async def export_data(request: ExportRequest):
     print(request)
     usedUseCaseIds = request.usedUseCaseIds
-    df_list = []
 
     for ucid in usedUseCaseIds:
         if ucid.lower() == "containerlogistik":
-            df_list.append(generate_logisticData(request.rows, request.rowCount))
+            df = generate_logisticData(request.rows, request.rowCount)
         elif ucid.lower() == "gesundheit":
-            df_list.append(generate_healthData(request.rows, request.rowCount))
+            df = generate_healthData(request.rows, request.rowCount)
         elif ucid.lower() == "finanzen":
-            df_list.append(generate_financeData(request.rows, request.rowCount))
-
-    if not df_list:
-        raise HTTPException(status_code=400, detail="Keine Daten für die angegebenen UseCases gefunden")
-
-    df = pd.concat(df_list, ignore_index=True)
+            df = generate_financeData(request.rows, request.rowCount)
+            
     fmt = request.format.upper()
 
     # === JSON Export ===
