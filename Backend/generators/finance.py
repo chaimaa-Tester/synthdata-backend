@@ -8,7 +8,7 @@ from field_schemas import FrontendField, DistributionConfig
 
 # Mapping von Frontend-Typen (Aliases) auf Backend-Typen
 TYPE_ALIASES = {
-    "name": "name", "kontonummer": "integer", "transaktionsdatum": "date",
+    "kundenname": "name", "kontonummer": "integer", "transaktionsdatum": "date",
     "email": "email", "telefon": "telefon", "transaktionsart": "transaktionsart",
     "betrag": "betrag"
 }
