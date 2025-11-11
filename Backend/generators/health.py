@@ -1,5 +1,9 @@
 import pandas as pd
 import random
+from faker import Faker
+
+# Faker Deutsch
+fake = Faker("de_DE")
 
 def berechne_bmi(gewicht, groesse):
     return round(gewicht / (groesse ** 2), 1)
@@ -21,30 +25,25 @@ def bewerte_patient(bmi, map_wert, gfr):
         gesund += 1
     if gfr > 60:
         gesund += 1
-    return "gesund" if gesund >= 2 else "kritisch"
+    return "gesund" if gesund >= 2 else "krank"
 
 def generate_healthData(rows, rowCount):
-    # Name-Geschlecht-Zuordnung
-    name_gender_map = {
-        "Max": "m", "Paul": "m", "Lukas": "m", "Leon": "m", "Tim": "m",
-        "Anna": "w", "Mia": "w", "Sophie": "w", "Laura": "w", "Emma": "w"
-    }
-
-    # Nur so viele Namen wie rowCount erlaubt
-    if rowCount > len(name_gender_map):
-        raise ValueError("rowCount überschreitet verfügbare eindeutige Namen")
-
-    # Zufällige Auswahl ohne Wiederholung
-    selected_names = random.sample(list(name_gender_map.keys()), rowCount)
     data = []
     versicherungsarten = ["gesetzlich", "privat"]
-    versicherung = random.choices(
-        versicherungsarten,
-        weights=[0.75, 0.25],  # ca. 75% gesetzlich, 25% privat
-        k=1
-    )[0]
-    for name in selected_names:
-        geschlecht = name_gender_map[name]
+
+    for _ in range(rowCount):
+
+        # --- Unbegrenzte deutsche Namen ---
+        geschlecht = random.choice(["m", "w"])
+
+        if geschlecht == "m":
+            name = fake.first_name_male() + " " + fake.last_name()
+        else:
+            name = fake.first_name_female() + " " + fake.last_name()
+
+        # Versicherung
+        versicherung = random.choices(["gesetzlich", "privat"], weights=[0.75, 0.25])[0]
+
         alter = random.randint(18, 90)
         groesse = round(random.uniform(1.50, 2.00), 2)
         gewicht = random.randint(45, 120)
@@ -56,7 +55,7 @@ def generate_healthData(rows, rowCount):
         kreatinin = round(random.uniform(0.6, 1.5), 2)
         raucher = random.choice(["ja", "nein"])
         diabetes = random.choice(["ja", "nein"])
-        allergien = random.choice(["keine", "Pollen", "Penicillin", "Hausstaub", "Nüsse","Krebs"])
+        allergien = random.choice(["keine", "Pollen", "Penicillin", "Hausstaub", "Nüsse", "Krebs"])
 
         bmi = berechne_bmi(gewicht, groesse)
         map_wert = berechne_map(rr_sys, rr_dia)
