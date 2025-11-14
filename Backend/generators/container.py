@@ -1,11 +1,10 @@
 # generator_container.py
-from typing import List
+from typing import List, Optional
 import pandas as pd
 import numpy as np
-from generator_carrier import generate_carrierData
+import random
+from carrier import generate_carrierData
 from field_schemas import FieldDefinition, DistributionConfig
-from preview_generator import generate_dummy_data, _to_float, _split_list, _categorical_exact, _maybe_as_text
-
 
 def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.DataFrame:
     rng = np.random.default_rng()
@@ -51,7 +50,7 @@ def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.Dat
                 paramB = dist_config.parameterB if dist_config else None
                 
                 values = _split_list(paramA) or CONTAINER_TYPE_CHOICES
-                weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
+                weights = [float(w, 1.0) for w in _split_list(paramB or "")]
                 
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -63,16 +62,16 @@ def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.Dat
         # 3. Container Größe - mit uniform/kategorischer Verteilung
         elif field_type == "attributesize":
             if dist == "uniform":
-                paramA = _to_float(dist_config.parameterA) if dist_config else 20.0
-                paramB = _to_float(dist_config.parameterB) if dist_config else 45.0
+                paramA = float(dist_config.parameterA) if dist_config else 20.0
+                paramB = float(dist_config.parameterB) if dist_config else 45.0
                 df[col_name] = rng.uniform(paramA, paramB, size=rowCount).round(1)
             elif dist == "categorical":
                 paramA = dist_config.parameterA if dist_config else None
                 paramB = dist_config.parameterB if dist_config else None
                 
                 values = _split_list(paramA) or [str(x) for x in CONTAINER_SIZES]
-                values = [_to_float(v, 20.0) for v in values]  # Convert to float
-                weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
+                values = [float(v, 20.0) for v in values]  # Convert to float
+                weights = [float(w, 1.0) for w in _split_list(paramB or "")]
                 
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -83,8 +82,8 @@ def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.Dat
 
         # 4. Container Gewicht - mit uniform/normal Verteilung
         elif field_type == "attributeweight":
-            paramA = _to_float(dist_config.parameterA) if dist_config else None
-            paramB = _to_float(dist_config.parameterB) if dist_config else None
+            paramA = float(dist_config.parameterA) if dist_config else None
+            paramB = float(dist_config.parameterB) if dist_config else None
 
             if dist == "uniform":
                 low = paramA if paramA is not None else 2000.0
@@ -106,7 +105,7 @@ def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.Dat
                 paramB = dist_config.parameterB if dist_config else None
                 
                 values = _split_list(paramA) or ["loaded", "empty"]
-                weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
+                weights = [float(w, 1.0) for w in _split_list(paramB or "")]
                 
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -122,7 +121,7 @@ def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.Dat
                 paramB = dist_config.parameterB if dist_config else None
                 
                 values = _split_list(paramA) or ["import", "export"]
-                weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
+                weights = [float(w, 1.0) for w in _split_list(paramB or "")]
                 
                 if not weights or len(weights) != len(values):
                     weights = [1.0] * len(values)
@@ -161,8 +160,8 @@ def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.Dat
 
         # 9. Dwell Time - uniform/normal Verteilung
         elif field_type == "dwelltime":
-            paramA = _to_float(dist_config.parameterA) if dist_config else None
-            paramB = _to_float(dist_config.parameterB) if dist_config else None
+            paramA = float(dist_config.parameterA) if dist_config else None
+            paramB = float(dist_config.parameterB) if dist_config else None
 
             if dist == "uniform":
                 low = paramA if paramA is not None else 6.0
@@ -382,3 +381,51 @@ def _calculate_final_dependencies(df, reqs, rng):
                 df[field["name"]] = dwell_times
             else:
                 df[field["name"]] = [rng.uniform(6.0, 72.0).round(2) for _ in range(len(df))]
+
+rng = np.random.default_rng()
+def _categorical_exact(values: list, weights: np.ndarray, size: int) -> list:
+    """Gibt eine Liste der Länge `size` zurück, deren Elemente entsprechend den Gewichten verteilt sind.
+    Es wird deterministisch gerundet: zunächst floor(weights*size) und verbleibende Elemente
+    nach dem größten Anteil (Methode des größten Restes) verteilt. Das Ergebnis wird
+    anschließend durchmischt.
+    """
+    if len(values) == 0:
+        return [None] * size
+    if weights is None or len(weights) != len(values):
+        return [random.choice(values) for _ in range(size)]
+
+    # normalisieren
+    w = np.array(weights, dtype=float)
+    if w.sum() <= 0:
+        w = np.ones_like(w)
+    w = w / w.sum()
+
+    # exakte Zählungen mittels Abrunden (floor) + Verteilung der Restplätze nach größtem Anteil
+    target = w * size
+    counts = np.floor(target).astype(int)
+    remainder = size - counts.sum()
+    if remainder > 0:
+        frac = target - np.floor(target)
+        # Indizes nach absteigendem Nachkommaanteil sortieren
+        idxs = np.argsort(-frac)
+        for i in range(remainder):
+            counts[idxs[i % len(idxs)]] += 1
+
+    out = []
+    for val, c in zip(values, counts):
+        out.extend([val] * int(c))
+    # Falls durch Rundung die Länge abweicht, anpassen
+    if len(out) < size:
+        out.extend([values[0]] * (size - len(out)))
+    elif len(out) > size:
+        out = out[:size]
+
+    # Ergebnis deterministisch durch den RNG mischen
+    arr = np.array(out, dtype=object)
+    rng.shuffle(arr)
+    return arr.tolist()
+
+def _split_list(s: Optional[str]) -> list[str]:
+    if not s:
+        return []
+    return [x.strip() for x in s.split(",") if x.strip()]

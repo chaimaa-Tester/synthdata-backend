@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form
 from typing import List
 from field_schemas import FieldDefinition, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import pandas as pd
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from generators.health import generate_healthData
 from generators.finance import generate_financeData
 from generators.container import generate_containerData
@@ -45,8 +45,8 @@ async def export_data(request: ExportRequest):
     usedUseCaseIds = request.usedUseCaseIds
 
     for ucid in usedUseCaseIds:
-        if ucid.lower() == "containerlogistik":
-            df = generate_logisticData(request.rows, request.rowCount)
+        if ucid.lower() == "logistik":
+            df = generate_containerData(request.rows, request.rowCount)
         elif ucid.lower() == "gesundheit":
             df = generate_healthData(request.rows, request.rowCount)
         elif ucid.lower() == "finanzen":
