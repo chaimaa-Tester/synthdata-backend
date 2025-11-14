@@ -8,7 +8,7 @@ import pandas as pd
 from fastapi.responses import StreamingResponse, JSONResponse
 from generator_health import generate_healthData
 from generator_finance import generate_financeData
-from generator_logistic import generate_logisticData
+from generator_container import generate_containerData
 from scipy import stats
 import numpy as np
 
@@ -42,15 +42,76 @@ async def list_fields():
 
 @app.post("/api/export")
 async def export_csv(request: ExportRequest):
+    # Debug: Request-Objekt ausgeben (kann entfernt/auf logging umgestellt werden)
     print(request)
-    usedUseCaseIds = request.usedUseCaseIds
+
+    # Liste der ausgewählten UseCases (sicher machen, dass None abgefangen wird)
+    usedUseCaseIds = request.usedUseCaseIds or []
+
+    # Wir sammeln alle Teilergebnisse (DataFrames) der einzelnen Generatoren in einer Liste.
+    # Warum? Wenn mehrere UseCases gewählt werden, erzeugt jeder Generator eigene Spalten.
+    # Überschreiben würde vorherige Ergebnisse verlieren; am Ende führen wir zusammen.
+    dfs: list[pd.DataFrame] = []
+
+    # Mapping von UseCase-ID (lowercase) auf die Generator-Funktion
+    usecase_map = {
+    "logistik": generate_containerData,   # Container + Carrier integriert
+    "gesundheit": generate_healthData,
+    "finanzen": generate_financeData,
+}
+
+
     for ucid in usedUseCaseIds:
-       if ucid.lower() == "containerlogistik":
-            df = generate_logisticData(request.rows, request.rowCount)
-       elif ucid.lower() == "gesundheit":
-            df = generate_healthData(request.rows, request.rowCount)
-       elif ucid.lower() == "finanzen":
-            df = generate_financeData(request.rows, request.rowCount)
+        if not ucid:
+            continue
+        gen = usecase_map.get(ucid.lower())
+        if gen:
+            # Generator aufrufen; erwartet (rows, rowCount) und liefert ein DataFrame
+            df_part = gen(request.rows, request.rowCount)
+            if isinstance(df_part, pd.DataFrame) and not df_part.empty:
+                dfs.append(df_part)
+        else:
+            # Unbekannter UseCase -> Warnung (kein Abbruch)
+            print(f"WARNUNG: Unbekannter UseCase '{ucid}'")
+
+    # Wenn kein Generator gültige Daten geliefert hat, Fehler zurückgeben
+    if not dfs:
+        raise HTTPException(status_code=400, detail="Keine gültigen UseCases/Generatoren ausgewählt oder keine Daten erzeugt")
+
+    # Falls mehrere DataFrames: zusammenfügen (outer-join mittels concat, unterschiedliche Spalten bleiben erhalten)
+    if len(dfs) == 1:
+        df = dfs[0]
+    else:
+        # Wenn mehrere Generatoren gewählt wurden, die Ergebnisse spaltenweise kombinieren
+        # (jede Generator liefert die gleichen Anzahl Zeilen für die Vorschau/export)
+        df = pd.concat(dfs, axis=1)
+        # Duplikate in Spaltennamen vermeiden: erste Vorkommen behalten
+        df = df.loc[:, ~df.columns.duplicated()]
+
+    # nach dem Zusammenfügen aller Generator-DataFrames -> df vorhanden
+    # Wunsch: nur die Felder exportieren, die im Frontend ausgewählt wurden (request.rows)
+    requested = [ (r.name or "").strip() for r in (request.rows or []) if (r.name or "").strip() ]
+    if requested:
+        # case-insensitive Matching: finde für jeden requested-name die passende Spalte im df
+        cols_found = []
+        cols_lower = {c.lower(): c for c in df.columns}
+        for req in requested:
+            rq = req.lower()
+            # exaktes Match
+            if rq in cols_lower:
+                cols_found.append(cols_lower[rq])
+                continue
+            # substring match (z.B. "unit" findet "unitName")
+            matched = None
+            for c in df.columns:
+                if rq == c.lower() or rq in c.lower() or c.lower() in rq:
+                    matched = c
+                    break
+            if matched:
+                cols_found.append(matched)
+        # nur gefundene Spalten behalten (fallback: gesamte df, wenn none matched)
+        if cols_found:
+            df = df[cols_found]
 
     if request.format.upper() == "XLSX":
         # Mehrere Blätter unterstützen

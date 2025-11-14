@@ -30,12 +30,17 @@ TYPE_ALIASES = {
 
     # Containerlogistik (Frontend keys lowercased)
     "unitname": "string",
-    "timein": "date", "timeout": "date",
-    "attributesizes": "string", "attributesize": "string",
-    "attributes": "string", "attributestatus": "string", "attributestatuses": "string",
-    "attributeweights": "float", "attributedirections": "string",
-    "inboundcarrierid": "string", "outboundcarrierid": "string",
-    "serviceid": "string", "linerid": "string",
+    "timein": "date",
+    "timeout": "date", 
+    "Dwelltime in hours": "float",
+    "attributesize": "string",
+    "attributestatus": "string",
+    "attributeweights": "float", 
+    "attributedirections": "string",
+    "inboundcarrierid": "string",
+    "outboundcarrierid": "string",
+    "serviceid": "string", 
+    "linerid": "string",
 }
 
 # Deutscher mimesis Generator für bessere Namen und Geschlechts-Konsistenz
@@ -286,7 +291,7 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
 
         columns[field.name] = data
     
-    # 2) Abhängige Felder verarbeiten (Dependency nutzen)
+    # 2) Abhängige Felder verarbeiten (Dependency nutzen) — jetzt mit Unterstützung für mehrere Dependencies
     for field in dependent_fields:
         dep_raw = (field.dependency or "").strip()
 
@@ -294,94 +299,147 @@ def generate_dummy_data(fields: List[FrontendField], num_rows: int, as_text_for_
             columns[field.name] = [f"{field.name}_{i}" for i in range(num_rows)]
             continue
 
-        # Dependency-Key case-insensitiv auflösen; comma-separierte Einträge unterstützen und erstes Matching verwenden
-        dep_key = None
-        if dep_raw in columns:
-            dep_key = dep_raw
-        else:
+        # parse comma-separated dependency candidates
+        candidates = [d.strip() for d in dep_raw.split(",") if d.strip()]
+        matched_keys: list[str] = []
+        for cand in candidates:
+            # exact first
+            if cand in columns:
+                matched_keys.append(cand)
+                continue
+            # case-insensitive match
+            found = None
             for k in columns.keys():
-                if k.lower() == dep_raw.lower():
-                    dep_key = k
+                if k.lower() == cand.lower():
+                    found = k
                     break
-        if not dep_key:
-            # Versuche comma-separierte Einträge und finde das erste verfügbare Matching
-            for candidate in [d.strip() for d in dep_raw.split(",") if d.strip()]:
+            if found:
+                matched_keys.append(found)
+
+        # if nothing matched, try a relaxed substring match across column names
+        if not matched_keys:
+            for cand in candidates:
                 for k in columns.keys():
-                    if k.lower() == candidate.lower():
-                        dep_key = k
-                        break
-                if dep_key:
+                    if cand.lower() in k.lower() or k.lower() in cand.lower():
+                        matched_keys.append(k)
+                if matched_keys:
                     break
 
-        if not dep_key:
-            # Warnung ausgeben wenn nicht beim Feldtyp eingibt und None-Werte zuweisen
+        if not matched_keys:
             print(f"WARNUNG: Dependency '{dep_raw}' für Feld '{field.name}' nicht gefunden. Verfügbare Spalten: {list(columns.keys())}")
             columns[field.name] = [None] * num_rows
             continue
 
-        dep_values = columns[dep_key]
+        # collect dep values map for convenience
+        dep_values_map = {k: columns[k] for k in matched_keys}
         raw_type = (field.type or "").strip()
         ftype = TYPE_ALIASES.get(raw_type.lower(), raw_type.lower())
 
-        if ftype in ["name", "vorname", "nachname"]:
+        # Special: DwellTime (abhängig von timeIn & timeOut)
+        if "dwell" in field.name.lower() or ftype in ["dwell", "dwelltime", "float"] and "dwell" in raw_type.lower():
+            # find time-in/out keys
+            time_in_key = None
+            time_out_key = None
+            for k in matched_keys:
+                kl = k.lower()
+                if "timein" in kl or ("time" in kl and "in" in kl) or "arrival" in kl:
+                    time_in_key = k
+                if "timeout" in kl or ("time" in kl and "out" in kl) or "departure" in kl:
+                    time_out_key = k
+            # fallback: if exactly two matched keys, take first as in and second as out
+            if not time_in_key and not time_out_key and len(matched_keys) >= 2:
+                time_in_key = matched_keys[0]
+                time_out_key = matched_keys[1]
+
             data = []
-            male_terms = {"m", "männlich", "mann", "herr"}
-            female_terms = {"w" , "weiblich", "frau", "dame"}
-            for gv in dep_values:
-                gv_norm = (gv or "").strip().lower()
-
-                if gv_norm in male_terms:
-                    # männlich
-                    if ftype == "vorname":
-                        data.append(person_gen.first_name(gender=Gender.MALE))
-                    elif ftype == "nachname":
-                        data.append(person_gen.last_name())
-                    else:
-                        first = person_gen.first_name(gender=Gender.MALE)
-                        last = person_gen.last_name()
-                        data.append(f"{first} {last}")
-
-                elif gv_norm in female_terms:
-                    # weiblich
-                    if ftype == "vorname":
-                        data.append(person_gen.first_name(gender=Gender.FEMALE))
-                    elif ftype == "nachname":
-                        data.append(person_gen.last_name())
-                    else:
-                        first = person_gen.first_name(gender=Gender.FEMALE)
-                        last = person_gen.last_name()
-                        data.append(f"{first} {last}")
-
-                else:
-                    # Wenn der Dep-Wert wie ein vollständiger Name aussieht (z.B. 'Karl Gotti'),
-                    # dann wurde vermutlich das Namensfeld statt des Geschlechtsfeldes als Dependency angegeben.
-                    gv_str = (gv or "").strip()
-                    name_like = False
-                    if gv_str:
-                        #ich findeINTERESSANT: Wir verwenden hier eine erweiterte Heuristik, um vollständige Namen zu erkennen
-                        # Erweiterte Heuristik: mehrere Namensbestandteile erlaubt, Bindestriche und
-                        # apostrophartige Zeichen werden unterstützt (z.B. "Anne-Marie O'Neill").
-                        # Mindestens zwei Wörter, jeweils mit Großbuchstaben beginnend.
-                        name_like = bool(re.match(r"^[A-ZÄÖÜ][A-Za-zäöüß'’\-]+(?:\s+[A-ZÄÖÜ][A-Za-zäöüß'’\-]+)+$", gv_str))
-
-                    if name_like:
-                        print(f"WARNUNG: Dependency-Spalte '{dep_key}' scheint vollständige Namen zu enthalten ('{gv_str}'). Feld '{field.name}' erwartet ein Geschlecht. Bitte setze die Dependency auf das Geschlechtsfeld.")
-                        # Deutlichere Signalwirkung: keine automatische Zuweisung, stattdessen None
+            if time_in_key and time_out_key and time_in_key in columns and time_out_key in columns:
+                vals_in = columns[time_in_key]
+                vals_out = columns[time_out_key]
+                for vi, vo in zip(vals_in, vals_out):
+                    try:
+                        t_in = pd.to_datetime(vi)
+                        t_out = pd.to_datetime(vo)
+                        if pd.isna(t_in) or pd.isna(t_out) or t_out < t_in:
+                            data.append(None)
+                        else:
+                            hours = (t_out - t_in).total_seconds() / 3600.0
+                            data.append(round(float(hours), 2))
+                    except Exception:
                         data.append(None)
-                    else:
-                        # FALLBACK: Unbekannter Wert -> verwende weiblich als Fallback 
-                        print(f"WARNUNG: Unbekanntes Geschlecht '{gv}', verwende weiblich als Fallback")
+            else:
+                data = [None] * num_rows
+
+            columns[field.name] = _maybe_as_text(data, as_text_for_sheets)
+            continue
+
+        # Special: name/vorname/nachname can depend on a gender column among multiple dependencies
+        if ftype in ["name", "vorname", "nachname"]:
+            # find gender-like dependency among matched_keys
+            gender_key = None
+            for k in matched_keys:
+                if any(x in k.lower() for x in ("geschlecht", "gender", "sex")):
+                    gender_key = k
+                    break
+            # fallback: if first matched looks like gender tokens
+            if not gender_key and matched_keys:
+                # try to detect by values
+                for k in matched_keys:
+                    sample = (columns[k][0] if columns[k] else "").strip().lower()
+                    if sample in {"m","w","male","female","männlich","weiblich"}:
+                        gender_key = k
+                        break
+
+            data = []
+            if gender_key:
+                for gv in columns[gender_key]:
+                    gv_norm = (gv or "").strip().lower()
+                    male_terms = {"m", "male", "männlich", "mann", "herr"}
+                    female_terms = {"w", "female", "weiblich", "frau", "dame"}
+                    if gv_norm in male_terms:
+                        if ftype == "vorname":
+                            data.append(person_gen.first_name(gender=Gender.MALE))
+                        elif ftype == "nachname":
+                            data.append(person_gen.last_name())
+                        else:
+                            data.append(f"{person_gen.first_name(gender=Gender.MALE)} {person_gen.last_name()}")
+                    elif gv_norm in female_terms:
                         if ftype == "vorname":
                             data.append(person_gen.first_name(gender=Gender.FEMALE))
                         elif ftype == "nachname":
                             data.append(person_gen.last_name())
                         else:
-                            first = person_gen.first_name(gender=Gender.FEMALE)
-                            last = person_gen.last_name()
-                            data.append(f"{first} {last}")
+                            data.append(f"{person_gen.first_name(gender=Gender.FEMALE)} {person_gen.last_name()}")
+                    else:
+                        # fallback: None to highlight mismatch
+                        data.append(None)
+            else:
+                # no gender source: fallback to random gender
+                for _ in range(num_rows):
+                    if ftype == "vorname":
+                        data.append(person_gen.first_name())
+                    elif ftype == "nachname":
+                        data.append(person_gen.last_name())
+                    else:
+                        data.append(person_gen.full_name())
 
             columns[field.name] = data
+            continue
+
+        # Default: if multiple dependencies, create a concatenation of their values (string)
+        if len(matched_keys) > 1:
+            out = []
+            lists = [columns[k] for k in matched_keys]
+            for i in range(num_rows):
+                parts = []
+                for lst in lists:
+                    v = lst[i] if i < len(lst) else None
+                    if v is None:
+                        continue
+                    parts.append(str(v))
+                out.append(" ".join(parts) if parts else None)
+            columns[field.name] = out
         else:
-            columns[field.name] = list(dep_values)
+            # single dependency: copy values
+            columns[field.name] = list(columns[matched_keys[0]])
 
     return pd.DataFrame(columns)
