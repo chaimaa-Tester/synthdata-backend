@@ -1,31 +1,33 @@
-from fastapi import FastAPI, Request, UploadFile, File, Form
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from typing import List
 from field_schemas import FieldDefinition, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import pandas as pd
-from fastapi.responses import StreamingResponse, JSONResponse
-from preview_generator import generate_dummy_data
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from generators.health import generate_healthData
+from generators.finance import generate_financeData
+from generators.logistic import generate_logisticData
 from scipy import stats
 import numpy as np
 
 app = FastAPI()
-@app.get("/")
-def root():
-    return {"message": "Backend läuft"}
 
-
-# CORS-Konfiguration (z. B. für Frontend auf Port 5173)
+# === CORS-Konfiguration ===
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # oder ["*"] für Entwicklung
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# /api/v1/fields bleibt unverändert
+@app.get("/")
+def root():
+    return {"message": "Backend läuft"}
+
+# === Felder speichern / abrufen ===
 @app.post("/api/v1/fields")
 async def receive_fields(fields: List[FieldDefinition]):
     field_storage.save_fields(fields)
@@ -36,17 +38,60 @@ async def list_fields():
     return field_storage.get_fields()
 
 
+# === Export-Endpunkt ===
 @app.post("/api/export")
-async def export_csv(request: ExportRequest):
+async def export_data(request: ExportRequest):
     print(request)
-    # Dummy-Daten generieren
-    df = generate_dummy_data(request.rows, request.rowCount)
+    usedUseCaseIds = request.usedUseCaseIds
 
-    if request.format.upper() == "XLSX":
-        # Mehrere Blätter unterstützen
+    for ucid in usedUseCaseIds:
+        if ucid.lower() == "containerlogistik":
+            df = generate_logisticData(request.rows, request.rowCount)
+        elif ucid.lower() == "gesundheit":
+            df = generate_healthData(request.rows, request.rowCount)
+        elif ucid.lower() == "finanzen":
+            df = generate_financeData(request.rows, request.rowCount)
+            
+    fmt = request.format.upper()
+
+    # === JSON Export ===
+    if fmt == "JSON":
+        json_str = df.to_json(orient="records", force_ascii=False, indent=2)
+        json_buffer = io.BytesIO(json_str.encode("utf-8"))
+        json_buffer.seek(0)
+        return StreamingResponse(
+            json_buffer,
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=synthdata.json"},
+        )
+
+    # === SQL Export ===
+    elif fmt == "SQL":
+        table_name = getattr(request, "tableName", "exported_table")
+        sql_buffer = io.StringIO()
+
+        for _, row in df.iterrows():
+            columns = ", ".join(row.index)
+            values = []
+            for v in row.values:
+                if pd.isna(v):
+                    values.append("NULL")
+                else:
+                    safe_val = str(v).replace("'", "''")
+                    values.append(f"'{safe_val}'")
+            sql_buffer.write(f"INSERT INTO {table_name} ({columns}) VALUES ({', '.join(values)});\n")
+
+        sql_buffer.seek(0)
+        return StreamingResponse(
+            sql_buffer,
+            media_type="application/sql",
+            headers={"Content-Disposition": "attachment; filename=synthdata.sql"},
+        )
+
+    # === XLSX Export ===
+    elif fmt == "XLSX":
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            # Beispiel: Ein Tabellenblatt "Sheet 1"
             df.to_excel(writer, index=False, sheet_name="Sheet 1")
         output.seek(0)
         return StreamingResponse(
@@ -54,26 +99,25 @@ async def export_csv(request: ExportRequest):
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": "attachment; filename=synthdatawizard.xlsx"},
         )
+
+    # === CSV Export (Standard) ===
     else:
-        # CSV konfigurieren
-        separator = "," if request.format.upper() == "CSV" else ";"
+        separator = "," if fmt == "CSV" else ";"
         line_end = "\r\n" if "CRLF" in request.lineEnding.upper() else "\n"
 
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False, sep=separator, lineterminator=line_end)
         csv_buffer.seek(0)
-
         return StreamingResponse(
             csv_buffer,
             media_type="text/csv",
             headers={"Content-Disposition": "attachment; filename=synthdata.csv"},
         )
-         
 
 
+# === Distribution Detection ===
 @app.post("/detect-distribution")
 async def detect_distribution(file: UploadFile = File(...)):
-    # Datei einlesen (CSV oder XLSX)
     contents = await file.read()
     try:
         if file.filename.endswith(".csv"):
@@ -90,11 +134,7 @@ async def detect_distribution(file: UploadFile = File(...)):
 
 
 @app.post("/detect-distribution/column")
-async def detect_distribution_column(
-    file: UploadFile = File(...),
-    column: str = Form(...)
-):
-    # Datei einlesen (CSV oder XLSX)
+async def detect_distribution_column(file: UploadFile = File(...), column: str = Form(...)):
     contents = await file.read()
     try:
         if file.filename.endswith(".csv"):
@@ -110,7 +150,6 @@ async def detect_distribution_column(
         return JSONResponse(status_code=400, content={"error": "Column not found in data"})
 
     data = df[column].dropna().values
-    # Nur numerische Daten verwenden
     data = data[np.isfinite(data)]
     if len(data) == 0:
         return JSONResponse(status_code=400, content={"error": "Selected column has no valid numerical data"})
@@ -129,31 +168,22 @@ async def detect_distribution_column(
 
     for name, dist in distributions.items():
         try:
-            # Fit distribution to data
             params = dist.fit(data)
-            # KS-Test
             D, p = stats.kstest(data, dist.name, args=params)
-            results[name] = {
-                "parameters": params,
-                "p_value": p,
-            }
+            results[name] = {"parameters": params, "p_value": p}
             if p > best_p:
                 best_p = p
                 best_fit = name
         except Exception:
-            # Falls Fit oder Test fehlschlägt, ignoriere
             continue
 
-    # Histogramm-Werte (10 Bins)
     hist_counts, bin_edges = np.histogram(data, bins=10, density=True)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    # Verteilungskurven für alle Distributionen berechnen
     dist_curves = {}
     for name, dist in distributions.items():
         if name in results:
             params = results[name]["parameters"]
-            # pdf für bin_centers berechnen
             try:
                 pdf_vals = dist.pdf(bin_centers, *params)
                 dist_curves[name] = pdf_vals.tolist()
@@ -172,18 +202,3 @@ async def detect_distribution_column(
         },
         "distribution_curves": dist_curves,
     }
-
-
-
-# @app.post("/api/export")
-# async def export_debug(request: Request):
-#     body = await request.json()
-#     print("📦 Eingehende Rohdaten vom Frontend:")
-#     print(body)
-#     return {"status": "debug"}
-
-
-
- 
-
-# 2. TO-DO CSV Export Funktion erstellen

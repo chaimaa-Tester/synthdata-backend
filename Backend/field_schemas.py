@@ -30,3 +30,4 @@ class ExportRequest(BaseModel):
     rowCount: int
     format: str
     lineEnding: str
+    usedUseCaseIds: List[str]
