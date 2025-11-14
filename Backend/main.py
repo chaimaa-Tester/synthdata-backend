@@ -251,3 +251,48 @@ async def fit_distribution(request: DistributionFitRequest):
             "y": y_fit.tolist() if hasattr(y_fit, "tolist") else [],
         },
     }
+
+# ==== Profile Management (JSON-Speicherung) ====
+from storage_manager import load_profiles, add_profile, delete_profile, save_profile_data, get_profile_data
+
+@app.get("/profiles")
+def get_profiles():
+    """Lädt alle gespeicherten Profile aus data.json"""
+    return load_profiles()
+
+@app.post("/profiles")
+def create_profile(profile: dict):
+    """Erstellt ein neues Profil und speichert es in data.json"""
+    name = profile.get("name")
+    if not name:
+        return {"error": "Name ist erforderlich"}
+    new_profile = add_profile(name)
+    return new_profile
+
+@app.delete("/profiles/{profile_id}")
+def remove_profile(profile_id: str):
+    """Löscht ein bestehendes Profil aus data.json"""
+    delete_profile(profile_id)
+    return {"message": f"Profil {profile_id} wurde gelöscht"}
+
+
+# ==== Profile Data Storage ====
+@app.post("/profiles/{profile_id}/data")
+def save_profile_data_route(profile_id: str, data: dict):
+    """Speichert Daten innerhalb eines bestimmten Profils"""
+    try:
+        save_profile_data(profile_id, data)
+        return {"message": f"Daten für Profil {profile_id} wurden gespeichert"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/profiles/{profile_id}/data")
+def get_profile_data_route(profile_id: str):
+    """Lädt gespeicherte Daten für ein bestimmtes Profil"""
+    try:
+        data = get_profile_data(profile_id)
+        if data is None:
+            return {"data": {}}
+        return {"data": data}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
