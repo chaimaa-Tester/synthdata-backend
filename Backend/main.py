@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import List
+from pydantic import BaseModel
 from field_schemas import FieldDefinition, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
@@ -202,3 +203,126 @@ async def detect_distribution_column(file: UploadFile = File(...), column: str =
         },
         "distribution_curves": dist_curves,
     }
+
+
+
+# @app.post("/api/export")
+# async def export_debug(request: Request):
+#     body = await request.json()
+#     print("📦 Eingehende Rohdaten vom Frontend:")
+#     print(body)
+#     return {"status": "debug"}
+
+
+# ==== Custom Distribution Fitting API ====
+class DistributionFitRequest(BaseModel):
+    points: list[float]
+
+
+@app.post("/api/fit-distribution")
+async def fit_distribution(request: DistributionFitRequest):
+    points = np.array(request.points, dtype=float)
+    # Remove NaN/infinite
+    points = points[np.isfinite(points)]
+    if len(points) < 2:
+        return JSONResponse(status_code=400, content={"error": "Not enough points"})
+    # Normalize to [0, 1]
+    min_val = np.min(points)
+    max_val = np.max(points)
+    if max_val - min_val > 0:
+        norm_points = (points - min_val) / (max_val - min_val)
+    else:
+        norm_points = np.zeros_like(points)
+
+    # List of distributions to test
+    candidates = {
+        "norm": stats.norm,
+        "lognorm": stats.lognorm,
+        "expon": stats.expon,
+        "gamma": stats.gamma,
+        "beta": stats.beta,
+        "uniform": stats.uniform,
+    }
+    results = {}
+    best_fit = None
+    best_p = -np.inf
+    best_params = None
+    for name, dist in candidates.items():
+        try:
+            params = dist.fit(norm_points)
+            D, p = stats.kstest(norm_points, dist.name, args=params)
+            results[name] = {
+                "parameters": [float(x) for x in params],
+                "p_value": float(p),
+            }
+            if p > best_p:
+                best_p = p
+                best_fit = name
+                best_params = [float(x) for x in params]
+        except Exception:
+            continue
+
+    x_fit = np.linspace(0, 1, 100)
+    y_fit = []
+    if best_fit is not None and best_params is not None:
+        dist = candidates[best_fit]
+        try:
+            y_fit = dist.pdf(x_fit, *best_params)
+        except Exception:
+            y_fit = []
+
+    return {
+        "best_distribution": best_fit,
+        "p_value": float(best_p),
+        "parameters": best_params if best_params is not None else [],
+        "all_results": results,
+        "fit_curve": {
+            "x": x_fit.tolist(),
+            "y": y_fit.tolist() if hasattr(y_fit, "tolist") else [],
+        },
+    }
+
+# ==== Profile Management (JSON-Speicherung) ====
+from storage_manager import load_profiles, add_profile, delete_profile, save_profile_data, get_profile_data
+
+@app.get("/profiles")
+def get_profiles():
+    """Lädt alle gespeicherten Profile aus data.json"""
+    return load_profiles()
+
+@app.post("/profiles")
+def create_profile(profile: dict):
+    """Erstellt ein neues Profil und speichert es in data.json"""
+    name = profile.get("name")
+    if not name:
+        return {"error": "Name ist erforderlich"}
+    new_profile = add_profile(name)
+    return new_profile
+
+@app.delete("/profiles/{profile_id}")
+def remove_profile(profile_id: str):
+    """Löscht ein bestehendes Profil aus data.json"""
+    delete_profile(profile_id)
+    return {"message": f"Profil {profile_id} wurde gelöscht"}
+
+
+# ==== Profile Data Storage ====
+@app.post("/profiles/{profile_id}/data")
+def save_profile_data_route(profile_id: str, data: dict):
+    """Speichert Daten innerhalb eines bestimmten Profils"""
+    try:
+        save_profile_data(profile_id, data)
+        return {"message": f"Daten für Profil {profile_id} wurden gespeichert"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/profiles/{profile_id}/data")
+def get_profile_data_route(profile_id: str):
+    """Lädt gespeicherte Daten für ein bestimmtes Profil"""
+    try:
+        data = get_profile_data(profile_id)
+        if data is None:
+            return {"data": {}}
+        return {"data": data}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
