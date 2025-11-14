@@ -3,7 +3,7 @@ from typing import List, Optional
 import pandas as pd
 import numpy as np
 import random
-from carrier import generate_carrierData
+from generators.carrier import generate_carrierData
 from field_schemas import FieldDefinition, DistributionConfig
 
 def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.DataFrame:
