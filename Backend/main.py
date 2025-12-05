@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from generators.health import generate_healthData
 from generators.finance import generate_financeData
 from generators.container import generate_containerData
+from dbhandler import connect_to_DB
 from scipy import stats
 import numpy as np
 
@@ -287,40 +288,55 @@ from storage_manager import load_profiles, add_profile, delete_profile, save_pro
 
 @app.get("/profiles")
 def get_profiles():
-    """Lädt alle gespeicherten Profile aus data.json"""
-    return load_profiles()
+    """Lädt alle gespeicherten Profile aus DB"""
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden"})
+    
+    return load_profiles(connect_to_DB())
 
 @app.post("/profiles")
 def create_profile(profile: dict):
-    """Erstellt ein neues Profil und speichert es in data.json"""
+    """Erstellt ein neues Profil und speichert es in DB"""
     name = profile.get("name")
     if not name:
         return {"error": "Name ist erforderlich"}
-    new_profile = add_profile(name)
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden"})
+    
+    new_profile = add_profile(connect_to_DB(), name)
     return new_profile
 
-@app.delete("/profiles/{profile_id}")
-def remove_profile(profile_id: str):
+@app.delete("/profiles/{db_id}")
+def remove_profile(db_id: str):
     """Löscht ein bestehendes Profil aus data.json"""
-    delete_profile(profile_id)
-    return {"message": f"Profil {profile_id} wurde gelöscht"}
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden"})
+    
+    delete_profile(connect_to_DB(), db_id)
+    return {"message": f"Profil {db_id} wurde gelöscht"}
 
 
 # ==== Profile Data Storage ====
-@app.post("/profiles/{profile_id}/data")
-def save_profile_data_route(profile_id: str, data: dict):
+@app.post("/profiles/{db_id}/data")
+def save_profile_data_route(db_id: str, data: dict):
     """Speichert Daten innerhalb eines bestimmten Profils"""
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden"})
+    
     try:
-        save_profile_data(profile_id, data)
-        return {"message": f"Daten für Profil {profile_id} wurden gespeichert"}
+        save_profile_data(connect_to_DB(), db_id, data)
+        return {"message": f"Daten für Profil {db_id} wurden gespeichert"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-@app.get("/profiles/{profile_id}/data")
-def get_profile_data_route(profile_id: str):
+@app.get("/profiles/{db_id}/data")
+def get_profile_data_route(db_id: str):
     """Lädt gespeicherte Daten für ein bestimmtes Profil"""
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden"})
+    
     try:
-        data = get_profile_data(profile_id)
+        data = get_profile_data(connect_to_DB(), db_id)
         if data is None:
             return {"data": {}}
         return {"data": data}
