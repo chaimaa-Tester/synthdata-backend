@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from generators.health import generate_healthData
 from generators.finance import generate_financeData
 from generators.container import generate_containerData
+from generators.general import generate_generalData
 from scipy import stats
 import numpy as np
 
@@ -52,6 +53,8 @@ async def export_data(request: ExportRequest):
             df = generate_healthData(request.rows, request.rowCount)
         elif ucid.lower() == "finanzen":
             df = generate_financeData(request.rows, request.rowCount)
+        elif ucid.lower() == "general":
+            df = generate_generalData(request.rows, request.rowCount)
             
     fmt = request.format.upper()
 
