@@ -105,3 +105,11 @@ def generate_generalData(fields: List[FrontendField], num_rows: int, as_text_for
             data = [Faker.uuid4() for _ in range(num_rows)]
 
         # Benutzerdefiniert
+
+
+        # Gesundheitsdaten
+        elif ftype == "body_height":
+            data = [person_gen.height() for _ in range(num_rows)]
+
+        elif ftype == "weight":
+            data = [person_gen.weight() for _ in range(num_rows)]

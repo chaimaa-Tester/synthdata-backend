@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import List
 from pydantic import BaseModel
-from field_schemas import FieldDefinition, ExportRequest
+from field_schemas import FrontendField, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
 import io
@@ -31,7 +31,7 @@ def root():
 
 # === Felder speichern / abrufen ===
 @app.post("/api/v1/fields")
-async def receive_fields(fields: List[FieldDefinition]):
+async def receive_fields(fields: List[FrontendField]):
     field_storage.save_fields(fields)
     return {"status": "ok", "received_fields": len(fields)}
 

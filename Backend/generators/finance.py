@@ -18,6 +18,16 @@ TRANSACTION_TYPES: List[str] = [
     "Abonnement / Abo-Zahlung"
 ]
 
+CREDITCARD_TYPES: List[str] = [
+    "VISA Karte",
+    "Mastercard",
+    "American Express",
+    "Girocard (EC)",
+    "Maestro"
+]
+
+CURRENCY: List [str] = ["EUR", "USD", "CHF", "GBP"]
+                        
 person_gen = Person(Locale.DE)
 
 rng = np.random.default_rng()
@@ -59,7 +69,7 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
             else:
                 data = [round(random.uniform(1, 1000), 2) for _ in range(num_rows)]
         
-        elif ftype in ["kontonummer"]:
+        elif ftype in ["IBAN"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
 
@@ -84,8 +94,18 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
             ordinals = rng.integers(start_ord, end_ord + 1, size=num_rows)
             data = [pd.Timestamp.fromordinal(int(o)).date().isoformat() for o in ordinals]
 
-        elif ftype in ["transaktionsart"]:
+        elif ftype.lower().startswith("transactiontype"):
+            if field.valueSource == "custom":
+                data = field.customValues
             data = [random.choice(TRANSACTION_TYPES) for _ in range(num_rows)]
+
+        elif ftype == "creditcard":
+            if field.valueSource == "custom":
+                data = field.customValues
+            data = [random.choice(CREDITCARD_TYPES) for _ in range(num_rows)]
+
+        elif ftype == "currency":
+            data = [random.choice(CURRENCY) for _ in range(num_rows)]
 
         else:
             data = [f"{field.name}_{i}" for i in range(num_rows)]   
@@ -224,6 +244,5 @@ def gen_german_account():
     Generiert:
     - kontonummer: 10-stellige, linksgepadete Nummer (String) + int
     """
-    # realistisch: Kontonummer bis 10 Stellen, oft mit führenden Nullen
     k_num = "".join(str(random.randint(0,9)) for _ in range(10))
     return k_num

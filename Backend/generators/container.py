@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 import random
 from generators.carrier import generate_carrierData
-from field_schemas import FieldDefinition, DistributionConfig
+from field_schemas import FrontendField
 
-def generate_containerData(rows: List[FieldDefinition], rowCount: int) -> pd.DataFrame:
+def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataFrame:
     rng = np.random.default_rng()
 
     # gewünschte Spalten (Name beliebig, Logik über type)

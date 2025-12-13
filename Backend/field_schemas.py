@@ -1,15 +1,5 @@
 from pydantic import BaseModel
 from typing import List, Optional
-
-# Modell zur Beschreibung eines Feldes
-class FieldDefinition(BaseModel):
-    name: str
-    type: str
-    dependency: Optional[str] = None
-    DoNotShowinTable: Optional[bool] = False
-
-
-
 class DistributionConfig(BaseModel):
     distribution: Optional[str] = None
     parameterA: Optional[str] = None
@@ -23,6 +13,8 @@ class FrontendField(BaseModel):
     type: str
     dependency: Optional[str] = None
     distributionConfig: Optional[DistributionConfig] = None
+    valueSource: Optional[str] = None
+    customValues: Optional[List[str]] = None
 
 
 class ExportRequest(BaseModel):
