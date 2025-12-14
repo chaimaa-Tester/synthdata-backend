@@ -67,7 +67,10 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
                 data = _maybe_as_text(arr.tolist(), as_text_for_sheets)
             
             else:
-                data = [round(random.uniform(1, 1000), 2) for _ in range(num_rows)]
+                if field.valueSource == "custom":
+                    data = field.customValues
+                else:
+                    data = [round(random.uniform(1, 1000), 2) for _ in range(num_rows)]
         
         elif ftype in ["IBAN"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
@@ -97,15 +100,20 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
         elif ftype.lower().startswith("transactiontype"):
             if field.valueSource == "custom":
                 data = field.customValues
-            data = [random.choice(TRANSACTION_TYPES) for _ in range(num_rows)]
+            else:
+                data = [random.choice(TRANSACTION_TYPES) for _ in range(num_rows)]
 
         elif ftype == "creditcard":
             if field.valueSource == "custom":
                 data = field.customValues
-            data = [random.choice(CREDITCARD_TYPES) for _ in range(num_rows)]
+            else:
+                data = [random.choice(CREDITCARD_TYPES) for _ in range(num_rows)]
 
         elif ftype == "currency":
-            data = [random.choice(CURRENCY) for _ in range(num_rows)]
+            if field.valueSource == "custom":
+                data = field.customValues
+            else:
+                data = [random.choice(CURRENCY) for _ in range(num_rows)]
 
         else:
             data = [f"{field.name}_{i}" for i in range(num_rows)]   

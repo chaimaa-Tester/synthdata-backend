@@ -46,15 +46,25 @@ async def export_data(request: ExportRequest):
     print(request)
     usedUseCaseIds = request.usedUseCaseIds
 
+    df_list = []
     for ucid in usedUseCaseIds:
         if ucid.lower() == "logistik":
-            df = generate_containerData(request.rows, request.rowCount)
+            temp_df = generate_containerData(request.rows, request.rowCount)
+            df_list.append(temp_df)
         elif ucid.lower() == "gesundheit":
-            df = generate_healthData(request.rows, request.rowCount)
+            temp_df = generate_healthData(request.rows, request.rowCount)
+            df_list.append(temp_df)
         elif ucid.lower() == "finanzen":
-            df = generate_financeData(request.rows, request.rowCount)
+            temp_df = generate_financeData(request.rows, request.rowCount)
+            df_list.append(temp_df)
         elif ucid.lower() == "general":
-            df = generate_generalData(request.rows, request.rowCount)
+            temp_df = generate_generalData(request.rows, request.rowCount)
+            df_list.append(temp_df)
+    
+    if df_list:
+        df = pd.concat(df_list, ignore_index=True)
+    else:
+        df = pd.DataFrame()
             
     fmt = request.format.upper()
 

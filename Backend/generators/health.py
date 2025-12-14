@@ -1,87 +1,86 @@
 import pandas as pd
 import random
 from faker import Faker
+from typing import List
+from field_schemas import FrontendField
 
 # Faker Deutsch
 fake = Faker("de_DE")
 
 def berechne_bmi(gewicht, groesse):
+    """Berechnet den Body-Mass-Index (BMI) in kg/m^2."""
+    # Formel: BMI = Gewicht [kg] / (Größe [m])^2
     return round(gewicht / (groesse ** 2), 1)
 
-def berechne_map(sys, dia):
-    return round((sys + 2 * dia) / 3, 1)
+def kategorisiere_bmi(bmi):
+    """
+    Kategorisiert den BMI-Wert gemäß den WHO-Standards.
+    """
+    if bmi < 18.5:
+        return "Untergewicht"
+    elif 18.5 <= bmi < 25.0:
+        return "Normalgewicht"
+    elif 25.0 <= bmi < 30.0:
+        return "Übergewicht"
+    elif 30.0 <= bmi < 35.0:
+        return "Adipositas (Grad I)"
+    elif 35.0 <= bmi < 40.0:
+        return "Adipositas (Grad II)"
+    else: # bmi >= 40.0
+        return "Adipositas (Grad III)"
 
-def berechne_gfr(alter, gewicht, kreatinin, geschlecht):
-    gfr = ((140 - alter) * gewicht) / (72 * kreatinin)
-    if geschlecht == "w":
-        gfr *= 0.85
-    return round(gfr, 1)
-
-def bewerte_patient(bmi, map_wert, gfr):
-    gesund = 0
-    if 18.5 <= bmi <= 25:
-        gesund += 1
-    if 70 <= map_wert <= 105:
-        gesund += 1
-    if gfr > 60:
-        gesund += 1
-    return "gesund" if gesund >= 2 else "krank"
-
-def generate_healthData(rows, rowCount):
+def generate_healthData(rows: List[FrontendField], rowCount: int):
+    """
+    Generiert einen synthetischen DataFrame mit Größe, Gewicht, BMI und BMI-Status.
+    BMI wird abhängig von Gewicht und Größe berechnet.
+    """
     data = []
-    versicherungsarten = ["gesetzlich", "privat"]
-
+    
+    # Felder für Gewicht und Größe identifizieren (falls definiert)
+    weight_field = next((f for f in rows if f.type.lower() == "weight"), None)
+    height_field = next((f for f in rows if f.type.lower() == "body_height"), None)
+    bmi_field = next((f for f in rows if f.type.lower() == "bmi"), None)
+    bmi_status_field = next((f for f in rows if f.type.lower() == "bmi-status"), None)
+    
     for _ in range(rowCount):
-
-        # --- Unbegrenzte deutsche Namen ---
-        geschlecht = random.choice(["m", "w"])
-
-        if geschlecht == "m":
-            name = fake.first_name_male() + " " + fake.last_name()
+        # Gewicht und Größe generieren (zufällig oder basierend auf Feldern)
+        if weight_field:
+            # Hier könntest du eine Verteilung aus weight_field.distributionConfig verwenden
+            gewicht = random.randint(45, 120)  # Placeholder; passe an Verteilung an
         else:
-            name = fake.first_name_female() + " " + fake.last_name()
-
-        # Versicherung
-        versicherung = random.choices(["gesetzlich", "privat"], weights=[0.75, 0.25])[0]
-
-        alter = random.randint(18, 90)
-        groesse = round(random.uniform(1.50, 2.00), 2)
-        gewicht = random.randint(45, 120)
-        rr_sys = random.randint(100, 160)
-        rr_dia = random.randint(60, 100)
-        puls = random.randint(55, 100)
-        temperatur = round(random.uniform(36.0, 38.5), 1)
-        spo2 = round(random.uniform(92.0, 100.0), 1)
-        kreatinin = round(random.uniform(0.6, 1.5), 2)
-        raucher = random.choice(["ja", "nein"])
-        diabetes = random.choice(["ja", "nein"])
-        allergien = random.choice(["keine", "Pollen", "Penicillin", "Hausstaub", "Nüsse", "Krebs"])
-
+            gewicht = random.randint(45, 120)
+        
+        if height_field:
+            groesse = round(random.uniform(1.50, 2.00), 2)  # Placeholder
+        else:
+            groesse = round(random.uniform(1.50, 2.00), 2)
+        
+        # BMI abhängig berechnen
         bmi = berechne_bmi(gewicht, groesse)
-        map_wert = berechne_map(rr_sys, rr_dia)
-        gfr = berechne_gfr(alter, gewicht, kreatinin, geschlecht)
-        status = bewerte_patient(bmi, map_wert, gfr)
+        bmi_status = kategorisiere_bmi(bmi)
+        
+        # Daten sammeln
+        row_data = {}
+        if height_field:
+            row_data[height_field.name] = groesse
+        else:
+            row_data["Größe_m"] = groesse
+        
+        if weight_field:
+            row_data[weight_field.name] = gewicht
+        else:
+            row_data["Gewicht_kg"] = gewicht
 
-        data.append({
-            "Name": name,
-            "Geschlecht": geschlecht,
-            "Versicherung": versicherung,
-            "Alter": alter,
-            "Größe_m": groesse,
-            "Gewicht_kg": gewicht,
-            "RR_sys_mmHg": rr_sys,
-            "RR_dia_mmHg": rr_dia,
-            "MAP_mmHg": map_wert,
-            "Puls_bpm": puls,
-            "Temperatur_C": temperatur,
-            "SpO2_%": spo2,
-            "Kreatinin_mg/dl": kreatinin,
-            "BMI": bmi,
-            "GFR": gfr,
-            "Raucher": raucher,
-            "Diabetes": diabetes,
-            "Allergien": allergien,
-            "Status": status
-        })
-
+        if bmi_field:
+            row_data[bmi_field.name] = bmi
+        else:
+            row_data["BMI"] = bmi
+        
+        if bmi_status_field:
+            row_data[bmi_status_field.name] = bmi_status
+        else:
+            row_data["BMI_Status"] = bmi_status
+        
+        data.append(row_data)
+    
     return pd.DataFrame(data)

@@ -15,6 +15,8 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
         name = (getattr(r, "name", "") or "").strip()
         ftype = (getattr(r, "type", "") or "").strip().lower()
         dist_config = getattr(r, 'distributionConfig', None)
+        valueSource = getattr(r, "valueSource", None)
+        customValues = getattr(r, "customValues", None)
         reqs.append({
             "name": name or ftype, 
             "type": ftype,
@@ -36,7 +38,7 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
 
     # Container-Basisdaten mit Verteilungsunterstützung
     for r in reqs:
-        col_name, field_type, dist_config = r["name"], r["type"], r["dist_config"]
+        col_name, field_type, dist_config, valueSource, customValues = r["name"], r["type"], r["dist_config"], r["valueSource"], r["customValues"]
         dist = (dist_config.distribution or "").strip().lower() if dist_config else ""
 
         # 1. UnitName - immer gleich (keine Verteilung nötig)
@@ -57,7 +59,10 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
-                df[col_name] = [rng.choice(CONTAINER_TYPE_CHOICES) for _ in range(rowCount)]
+                if valueSource == "custom":
+                    df[col_name] = customValues
+                else:
+                    df[col_name] = [rng.choice(CONTAINER_TYPE_CHOICES) for _ in range(rowCount)]
 
         # 3. Container Größe - mit uniform/kategorischer Verteilung
         elif field_type == "attributesize":
@@ -78,7 +83,10 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
-                df[col_name] = rng.choice(CONTAINER_SIZES, size=rowCount)
+                if valueSource == "custom":
+                    df[col_name] = customValues
+                else:
+                    df[col_name] = rng.choice(CONTAINER_SIZES, size=rowCount)
 
         # 4. Container Gewicht - mit uniform/normal Verteilung
         elif field_type == "attributeweight":
@@ -112,7 +120,10 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
-                df[col_name] = pd.NA  # Wird später berechnet
+                if valueSource == "custom":
+                    df[col_name] = customValues
+                else:
+                    df[col_name] = pd.NA  # Wird später berechnet
 
         # 6. Container Direction - kategorische Verteilung
         elif field_type == "attributedirection":
@@ -128,7 +139,10 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
-                df[col_name] = [rng.choice(["import", "export"]) for _ in range(rowCount)]
+                if valueSource == "custom":
+                    df[col_name] = customValues
+                else:
+                    df[col_name] = [rng.choice(["import", "export", "transshipment"]) for _ in range(rowCount)]
 
         # 7. Time In - uniform Verteilung über Datumsbereich
         elif field_type == "timein":
@@ -188,6 +202,8 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
     if needs_carrier or needs_times:
         n_carriers = max(5, min(50, rowCount // 3))
         carr = generate_carrierData(n_carriers)
+        if valueSource == "custom":
+            carr["serviceRoute"] = customValues
         carr_map = carr.set_index("id").to_dict("index")
         carrier_ids = rng.choice(carr["id"].tolist(), size=rowCount, replace=True)
 
