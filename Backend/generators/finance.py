@@ -117,6 +117,7 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
         elif ftype in ["telefon"]:
             data = [person_gen.phone_number() for _ in range(num_rows)]
 
+        #TODO: Eigene Liste erstellen
         elif ftype in ["transaktionsart"]:
             data = [random.choice(TRANSACTION_TYPES) for _ in range(num_rows)]
 

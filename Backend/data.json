@@ -1,1 +1,65 @@
-[]
+[
+  {
+    "id": "0f6c739c-242f-4a02-954f-3bdc31ce77ad",
+    "name": "B",
+    "data": {
+      "rows": [
+        {
+          "id": "1763450201474-0.07998232574072262",
+          "name": "Exmatrikulationsdatum",
+          "type": "date",
+          "dependency": "",
+          "distributionConfig": {
+            "distribution": "",
+            "parameterA": "",
+            "parameterB": "",
+            "extraParams": [],
+            "dependency": ""
+          }
+        },
+        {
+          "id": "1763450201474-0.9878994177791977",
+          "name": "",
+          "type": "",
+          "dependency": "",
+          "distributionConfig": {
+            "distribution": "",
+            "parameterA": "",
+            "parameterB": "",
+            "extraParams": [],
+            "dependency": ""
+          }
+        },
+        {
+          "id": "1763450201474-0.5822399247310388",
+          "name": "",
+          "type": "",
+          "dependency": "",
+          "distributionConfig": {
+            "distribution": "",
+            "parameterA": "",
+            "parameterB": "",
+            "extraParams": [],
+            "dependency": ""
+          }
+        },
+        {
+          "id": "1764006502258-0.5053812937265606",
+          "name": "",
+          "type": "",
+          "dependency": "",
+          "distributionConfig": {
+            "distribution": "",
+            "parameterA": "",
+            "parameterB": "",
+            "extraParams": [],
+            "dependency": ""
+          }
+        }
+      ],
+      "rowCount": 10,
+      "format": "CSV",
+      "lineEnding": "Windows(CRLF)"
+    }
+  }
+]

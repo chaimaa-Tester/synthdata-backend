@@ -216,69 +216,84 @@ async def detect_distribution_column(file: UploadFile = File(...), column: str =
 
 # ==== Custom Distribution Fitting API ====
 class DistributionFitRequest(BaseModel):
-    points: list[float]
+    x: list[float]
+    y: list[float]
 
 
 @app.post("/api/fit-distribution")
 async def fit_distribution(request: DistributionFitRequest):
-    points = np.array(request.points, dtype=float)
-    # Remove NaN/infinite
-    points = points[np.isfinite(points)]
-    if len(points) < 2:
+    from scipy.optimize import curve_fit
+
+    # Convert lists to numpy arrays
+    x = np.array(request.x, dtype=float)
+    y = np.array(request.y, dtype=float)
+
+    # Remove invalid values
+    mask = np.isfinite(x) & np.isfinite(y)
+    x, y = x[mask], y[mask]
+
+    if len(x) < 5:
         return JSONResponse(status_code=400, content={"error": "Not enough points"})
-    # Normalize to [0, 1]
-    min_val = np.min(points)
-    max_val = np.max(points)
-    if max_val - min_val > 0:
-        norm_points = (points - min_val) / (max_val - min_val)
+
+    # Normalize x to [0, 1]
+    x_min = x.min()
+    x_max = x.max()
+    denom = x_max - x_min
+    if denom == 0:
+        x = np.zeros_like(x)
     else:
-        norm_points = np.zeros_like(points)
+        x = (x - x_min) / denom
 
-    # List of distributions to test
+    # Normalize y so that it integrates to 1 (approximate PDF)
+    area = np.trapz(y, x)
+    if area > 0:
+        y = y / area
+
+    def fit_dist(pdf, init_params):
+        try:
+            params, _ = curve_fit(pdf, x, y, p0=init_params, maxfev=5000)
+            err = np.mean((y - pdf(x, *params)) ** 2)
+            return params, err
+        except Exception:
+            return None, np.inf
+
+    # Candidate distributions (parametric PDFs) - improved initial parameters
     candidates = {
-        "norm": stats.norm,
-        "lognorm": stats.lognorm,
-        "expon": stats.expon,
-        "gamma": stats.gamma,
-        "beta": stats.beta,
-        "uniform": stats.uniform,
+        "gamma":   (lambda t, a, scale: stats.gamma.pdf(t, a, scale=scale), [3.0, 0.3]),
+        "normal":  (lambda t, mu, sigma: stats.norm.pdf(t, mu, sigma),      [0.5, 0.15]),
+        "lognorm": (lambda t, s, scale: stats.lognorm.pdf(t, s, scale=scale), [0.6, 0.4]),
+        "expon":   (lambda t, scale: stats.expon.pdf(t, scale=scale),       [0.5]),
+        "weibull": (lambda t, c, scale: stats.weibull_min.pdf(t, c, scale=scale), [2.0, 0.4]),
     }
-    results = {}
-    best_fit = None
-    best_p = -np.inf
-    best_params = None
-    for name, dist in candidates.items():
-        try:
-            params = dist.fit(norm_points)
-            D, p = stats.kstest(norm_points, dist.name, args=params)
-            results[name] = {
-                "parameters": [float(x) for x in params],
-                "p_value": float(p),
-            }
-            if p > best_p:
-                best_p = p
-                best_fit = name
-                best_params = [float(x) for x in params]
-        except Exception:
-            continue
 
-    x_fit = np.linspace(0, 1, 100)
-    y_fit = []
-    if best_fit is not None and best_params is not None:
-        dist = candidates[best_fit]
-        try:
-            y_fit = dist.pdf(x_fit, *best_params)
-        except Exception:
-            y_fit = []
+    best_name = None
+    best_err = np.inf
+    best_params = None
+
+    for name, (pdf, init) in candidates.items():
+        params, err = fit_dist(pdf, init)
+        if name == "expon":
+            err *= 1.3
+        if params is not None and err < best_err:
+            best_name = name
+            best_err = err
+            best_params = params
+
+    if best_name is None or best_params is None:
+        return JSONResponse(status_code=400, content={"error": "Fitting failed"})
+
+    # Build smooth curve for the best fit to send back to the frontend
+    x_fit = np.linspace(0, 1, 150)
+    pdf = candidates[best_name][0]
+    y_fit = pdf(x_fit, *best_params)
 
     return {
-        "best_distribution": best_fit,
-        "p_value": float(best_p),
-        "parameters": best_params if best_params is not None else [],
-        "all_results": results,
+        "best_distribution": best_name,
+        "p_value": None,  # no KS-test here; using SSE instead
+        "parameters": best_params.tolist(),
         "fit_curve": {
             "x": x_fit.tolist(),
-            "y": y_fit.tolist() if hasattr(y_fit, "tolist") else [],
+            "y": y_fit.tolist(),
         },
     }
 
