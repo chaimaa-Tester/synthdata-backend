@@ -20,7 +20,9 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
         reqs.append({
             "name": name or ftype, 
             "type": ftype,
-            "dist_config": dist_config
+            "dist_config": dist_config,
+            "valueSource": valueSource,
+            "customValues": customValues
         })
 
     # Leeren DataFrame erstellen
@@ -60,7 +62,7 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
                 if valueSource == "custom":
-                    df[col_name] = customValues
+                    df[col_name] = [random.choice(customValues) for _ in range(rowCount)]
                 else:
                     df[col_name] = [rng.choice(CONTAINER_TYPE_CHOICES) for _ in range(rowCount)]
 
@@ -84,7 +86,7 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
                 if valueSource == "custom":
-                    df[col_name] = customValues
+                    df[col_name] = [random.choice(customValues) for _ in range(rowCount)]
                 else:
                     df[col_name] = rng.choice(CONTAINER_SIZES, size=rowCount)
 
@@ -121,7 +123,7 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
                 if valueSource == "custom":
-                    df[col_name] = customValues
+                    df[col_name] = [random.choice(customValues) for _ in range(rowCount)]
                 else:
                     df[col_name] = pd.NA  # Wird später berechnet
 
@@ -140,7 +142,7 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
                 df[col_name] = _categorical_exact(values, np.array(weights), rowCount)
             else:
                 if valueSource == "custom":
-                    df[col_name] = customValues
+                    df[col_name] = [random.choice(customValues) for _ in range(rowCount)]
                 else:
                     df[col_name] = [rng.choice(["import", "export", "transshipment"]) for _ in range(rowCount)]
 
@@ -202,8 +204,6 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
     if needs_carrier or needs_times:
         n_carriers = max(5, min(50, rowCount // 3))
         carr = generate_carrierData(n_carriers)
-        if valueSource == "custom":
-            carr["serviceRoute"] = customValues
         carr_map = carr.set_index("id").to_dict("index")
         carrier_ids = rng.choice(carr["id"].tolist(), size=rowCount, replace=True)
 
@@ -225,7 +225,10 @@ def generate_containerData(rows: List[FrontendField], rowCount: int) -> pd.DataF
         
         for r in reqs:
             if r["type"] in carrier_mapping:
-                df[r["name"]] = [get_carrier_value(cid, carrier_mapping[r["type"]]) for cid in carrier_ids]
+                if r["valueSource"] == "custom":
+                    df[r["name"]] = [random.choice(r["customValues"]) for _ in range(rowCount)]
+                else:
+                    df[r["name"]] = [get_carrier_value(cid, carrier_mapping[r["type"]]) for cid in carrier_ids]
 
         # Realistische Zeit-Abhängigkeiten anwenden
         _apply_time_dependencies(df, reqs, carrier_ids, carr_map, rng)
