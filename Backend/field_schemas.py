@@ -1,5 +1,7 @@
+# backend/field_schemas.py
 from pydantic import BaseModel
 from typing import List, Optional
+
 
 # Modell zur Beschreibung eines Feldes
 class FieldDefinition(BaseModel):
@@ -9,20 +11,29 @@ class FieldDefinition(BaseModel):
     DoNotShowinTable: Optional[bool] = False
 
 
-
 class DistributionConfig(BaseModel):
     distribution: Optional[str] = None
     parameterA: Optional[str] = None
     parameterB: Optional[str] = None
-    extraParams: Optional[List[str]] = None   
+    extraParams: Optional[List[str]] = None
 
 
-# Neues Modell für das Frontend-POST /api/my-endpoint
+# Neues Modell für das Frontend-POST /api/export
 class FrontendField(BaseModel):
     name: str
     type: str
     dependency: Optional[str] = None
     distributionConfig: Optional[DistributionConfig] = None
+    valueSource: Optional[str] = None
+    customValues: Optional[List[str]] = None
+    nameSource: Optional[str] = None  # falls du das im Frontend speicherst
+
+
+class ExportSheet(BaseModel):
+    id: str
+    name: str
+    fieldNames: List[str]  # Row-NAMEN (df columns müssen dazu passen)
+    locked: Optional[bool] = False
 
 
 class ExportRequest(BaseModel):
@@ -31,3 +42,4 @@ class ExportRequest(BaseModel):
     format: str
     lineEnding: str
     usedUseCaseIds: List[str]
+    sheets: Optional[List[ExportSheet]] = None
