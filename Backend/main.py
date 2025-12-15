@@ -2,7 +2,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import List
 from pydantic import BaseModel
-from field_schemas import FieldDefinition, ExportRequest
+from field_schemas import FrontendField, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
 import io
@@ -33,7 +33,7 @@ def root():
 
 # === Felder speichern / abrufen ===
 @app.post("/api/v1/fields")
-async def receive_fields(fields: List[FieldDefinition]):
+async def receive_fields(fields: List[FrontendField]):
     field_storage.save_fields(fields)
     return {"status": "ok", "received_fields": len(fields)}
 
@@ -81,27 +81,17 @@ def make_unique_sheet_names(names: list[str]) -> list[str]:
 async def export_data(request: ExportRequest):
     usedUseCaseIds = request.usedUseCaseIds or []
 
-    # WICHTIG: nicht überschreiben, sondern zusammenführen
-    dfs: list[pd.DataFrame] = []
     for ucid in usedUseCaseIds:
         if ucid.lower() == "logistik":
-            dfs.append(generate_containerData(request.rows, request.rowCount))
+            df = generate_containerData(request.rows, request.rowCount)
         elif ucid.lower() == "gesundheit":
-            dfs.append(generate_healthData(request.rows, request.rowCount))
+            df = generate_healthData(request.rows, request.rowCount)
         elif ucid.lower() == "finanzen":
-            dfs.append(generate_financeData(request.rows, request.rowCount))
+            df = generate_financeData(request.rows, request.rowCount)
         elif ucid.lower() == "general":
-            dfs.append(generate_generalData(request.rows, request.rowCount))
-
-    if len(dfs) == 0:
-        df = pd.DataFrame()
-    elif len(dfs) == 1:
-        df = dfs[0]
-    else:
-        df = pd.concat(dfs, axis=1)
-        df = df.loc[:, ~df.columns.duplicated()]
-
-    fmt = (request.format or "").upper()
+            df = generate_generalData(request.rows, request.rowCount)
+            
+    fmt = request.format.upper()
 
     # === JSON Export ===
     if fmt == "JSON":
