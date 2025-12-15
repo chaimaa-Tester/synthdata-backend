@@ -26,7 +26,7 @@ class FrontendField(BaseModel):
     distributionConfig: Optional[DistributionConfig] = None
     valueSource: Optional[str] = None
     customValues: Optional[List[str]] = None
-    nameSource: Optional[str] = None  # falls du das im Frontend speicherst
+    nameSource: Optional[str] = None
 
 
 class ExportSheet(BaseModel):

@@ -9,6 +9,7 @@ from field_schemas import FrontendField
 
 person_gen = Person(Locale.DE)
 address_gen = Address(Locale.DE)
+faker = Faker()
 
 rng = np.random.default_rng()
 
@@ -27,23 +28,22 @@ def generate_generalData(fields: List[FrontendField], num_rows: int, as_text_for
 
         # Primitive Datentypen
         if ftype == "string":
-            # TODO: Wir brauche eine Implementierung für die eingabe eigener Werte aus den Tooltips
-            data = [Faker.word() for _ in range(num_rows)]
+            data = [faker.word() for _ in range(num_rows)]
         
         elif ftype == "number":
-            data = [Faker.random_number() for _ in range(num_rows)]
+            data = [faker.random_number() for _ in range(num_rows)]
 
         elif ftype == "boolean":
-            data = [[True,False] for _ in range(num_rows)]
+            data = [random.choice(True, False) for _ in range(num_rows)]
 
         elif ftype == "date":
-            data = [Faker.date(pattern="dd.mm.yyyy") for _ in range(num_rows)]
+            data = [faker.date(pattern="dd.mm.yyyy") for _ in range(num_rows)]
 
         elif ftype == "time":
-            data = [Faker.time(pattern="HH:MM:SS") for _ in range(num_rows)]
+            data = [faker.time(pattern="HH:MM:SS") for _ in range(num_rows)]
 
         elif ftype == "datetime":
-            data = [Faker.date_time() for _ in range(num_rows)]
+            data = [faker.date_time() for _ in range(num_rows)]
 
         # Personenbezogene Daten
         elif ftype == "firstname":
@@ -91,18 +91,18 @@ def generate_generalData(fields: List[FrontendField], num_rows: int, as_text_for
         # Kategorien & Listen
         elif ftype == "enum":
             # TODO: Enum kann ein Typ übergeben werden für den das Enum erstellt werden soll!
-            data = [Faker.enum() for _ in range(num_rows)]
+            data = [faker.enum() for _ in range(num_rows)]
 
         elif ftype == "list":
             data = []
             for _ in range(num_rows):
-                data.append([Faker.word(), Faker.random_number()])
+                data.append([faker.word(), faker.random_number()])
 
         # Musterbasierte Datentypen (Regex)
 
         # Identifikatoren
         elif ftype == "uuid":
-            data = [Faker.uuid4() for _ in range(num_rows)]
+            data = [faker.uuid4() for _ in range(num_rows)]
 
         # Benutzerdefiniert
 
@@ -113,3 +113,10 @@ def generate_generalData(fields: List[FrontendField], num_rows: int, as_text_for
 
         elif ftype == "weight":
             data = [person_gen.weight() for _ in range(num_rows)]
+
+        else:
+            data = [f"{field.name}_{i}" for i in range(num_rows)]
+
+        columns[field.name] = data
+    
+    return pd.DataFrame(columns)
