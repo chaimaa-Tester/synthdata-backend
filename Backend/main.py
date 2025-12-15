@@ -1,3 +1,4 @@
+# backend/main.py
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import List
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from generators.container import generate_containerData
 from generators.general import generate_generalData
 from scipy import stats
 import numpy as np
+import re
 
 app = FastAPI()
 
@@ -40,31 +42,54 @@ async def list_fields():
     return field_storage.get_fields()
 
 
+# -------------------------
+# XLSX Sheet helpers
+# -------------------------
+def sanitize_sheet_name(name: str) -> str:
+    r"""
+    Excel-Regeln:
+    - max 31 Zeichen
+    - keine Zeichen: : \ / ? * [ ]
+    - darf nicht leer sein
+    """
+    if not name:
+        return "Sheet"
+    cleaned = re.sub(r"[:\\/?*\[\]]", "", name).strip()
+    if not cleaned:
+        cleaned = "Sheet"
+    return cleaned[:31]
+
+
+def make_unique_sheet_names(names: list[str]) -> list[str]:
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for n in names:
+        base = n
+        if base not in seen:
+            seen[base] = 1
+            out.append(base)
+        else:
+            seen[base] += 1
+            suffix = f" ({seen[base]})"
+            trimmed = base[: max(0, 31 - len(suffix))] + suffix
+            out.append(trimmed)
+    return out
+
+
 # === Export-Endpunkt ===
 @app.post("/api/export")
 async def export_data(request: ExportRequest):
-    print(request)
-    usedUseCaseIds = request.usedUseCaseIds
+    usedUseCaseIds = request.usedUseCaseIds or []
 
-    df_list = []
     for ucid in usedUseCaseIds:
         if ucid.lower() == "logistik":
-            temp_df = generate_containerData(request.rows, request.rowCount)
-            df_list.append(temp_df)
+            df = generate_containerData(request.rows, request.rowCount)
         elif ucid.lower() == "gesundheit":
-            temp_df = generate_healthData(request.rows, request.rowCount)
-            df_list.append(temp_df)
+            df = generate_healthData(request.rows, request.rowCount)
         elif ucid.lower() == "finanzen":
-            temp_df = generate_financeData(request.rows, request.rowCount)
-            df_list.append(temp_df)
+            df = generate_financeData(request.rows, request.rowCount)
         elif ucid.lower() == "general":
-            temp_df = generate_generalData(request.rows, request.rowCount)
-            df_list.append(temp_df)
-    
-    if df_list:
-        df = pd.concat(df_list, ignore_index=True)
-    else:
-        df = pd.DataFrame()
+            df = generate_generalData(request.rows, request.rowCount)
             
     fmt = request.format.upper()
 
@@ -83,7 +108,6 @@ async def export_data(request: ExportRequest):
     elif fmt == "SQL":
         table_name = getattr(request, "tableName", "exported_table")
         sql_buffer = io.StringIO()
-
         for _, row in df.iterrows():
             columns = ", ".join(row.index)
             values = []
@@ -93,8 +117,9 @@ async def export_data(request: ExportRequest):
                 else:
                     safe_val = str(v).replace("'", "''")
                     values.append(f"'{safe_val}'")
-            sql_buffer.write(f"INSERT INTO {table_name} ({columns}) VALUES ({', '.join(values)});\n")
-
+            sql_buffer.write(
+                f"INSERT INTO {table_name} ({columns}) VALUES ({', '.join(values)});\n"
+            )
         sql_buffer.seek(0)
         return StreamingResponse(
             sql_buffer,
@@ -105,8 +130,40 @@ async def export_data(request: ExportRequest):
     # === XLSX Export ===
     elif fmt == "XLSX":
         output = io.BytesIO()
+
+        # Fallback: wenn keine Sheets kommen -> 1 Sheet
+        if not request.sheets:
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Daten")
+            output.seek(0)
+            return StreamingResponse(
+                output,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": "attachment; filename=synthdatawizard.xlsx"},
+            )
+
+        # 1) Namen säubern + unique machen
+        raw_names = [sanitize_sheet_name(s.name) for s in request.sheets]
+        unique_names = make_unique_sheet_names(raw_names)
+
+        # 2) Pro Sheet: nur die ausgewählten Spalten exportieren
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Sheet 1")
+            for sheet_cfg, sheet_name in zip(request.sheets, unique_names):
+                wanted = [c for c in sheet_cfg.fieldNames if c in df.columns]
+
+                # Debug-Hilfe (falls leer)
+                if len(wanted) == 0:
+                    print("WARN: Sheet hat keine passenden Spalten:", sheet_cfg.name)
+                    print("wanted fieldNames:", sheet_cfg.fieldNames)
+                    print("df.columns:", list(df.columns))
+
+                    # Optional: leeres Sheet schreiben
+                    pd.DataFrame().to_excel(writer, index=False, sheet_name=sheet_name)
+                    continue
+
+                df_sheet = df[wanted].copy()
+                df_sheet.to_excel(writer, index=False, sheet_name=sheet_name)
+
         output.seek(0)
         return StreamingResponse(
             output,
@@ -117,7 +174,7 @@ async def export_data(request: ExportRequest):
     # === CSV Export (Standard) ===
     else:
         separator = "," if fmt == "CSV" else ";"
-        line_end = "\r\n" if "CRLF" in request.lineEnding.upper() else "\n"
+        line_end = "\r\n" if "CRLF" in (request.lineEnding or "").upper() else "\n"
 
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False, sep=separator, lineterminator=line_end)
@@ -218,15 +275,6 @@ async def detect_distribution_column(file: UploadFile = File(...), column: str =
     }
 
 
-
-# @app.post("/api/export")
-# async def export_debug(request: Request):
-#     body = await request.json()
-#     print("📦 Eingehende Rohdaten vom Frontend:")
-#     print(body)
-#     return {"status": "debug"}
-
-
 # ==== Custom Distribution Fitting API ====
 class DistributionFitRequest(BaseModel):
     points: list[float]
@@ -235,11 +283,10 @@ class DistributionFitRequest(BaseModel):
 @app.post("/api/fit-distribution")
 async def fit_distribution(request: DistributionFitRequest):
     points = np.array(request.points, dtype=float)
-    # Remove NaN/infinite
     points = points[np.isfinite(points)]
     if len(points) < 2:
         return JSONResponse(status_code=400, content={"error": "Not enough points"})
-    # Normalize to [0, 1]
+
     min_val = np.min(points)
     max_val = np.max(points)
     if max_val - min_val > 0:
@@ -247,7 +294,6 @@ async def fit_distribution(request: DistributionFitRequest):
     else:
         norm_points = np.zeros_like(points)
 
-    # List of distributions to test
     candidates = {
         "norm": stats.norm,
         "lognorm": stats.lognorm,
@@ -260,6 +306,7 @@ async def fit_distribution(request: DistributionFitRequest):
     best_fit = None
     best_p = -np.inf
     best_params = None
+
     for name, dist in candidates.items():
         try:
             params = dist.fit(norm_points)
@@ -295,17 +342,16 @@ async def fit_distribution(request: DistributionFitRequest):
         },
     }
 
+
 # ==== Profile Management (JSON-Speicherung) ====
 from storage_manager import load_profiles, add_profile, delete_profile, save_profile_data, get_profile_data
 
 @app.get("/profiles")
 def get_profiles():
-    """Lädt alle gespeicherten Profile aus data.json"""
     return load_profiles()
 
 @app.post("/profiles")
 def create_profile(profile: dict):
-    """Erstellt ein neues Profil und speichert es in data.json"""
     name = profile.get("name")
     if not name:
         return {"error": "Name ist erforderlich"}
@@ -314,15 +360,11 @@ def create_profile(profile: dict):
 
 @app.delete("/profiles/{profile_id}")
 def remove_profile(profile_id: str):
-    """Löscht ein bestehendes Profil aus data.json"""
     delete_profile(profile_id)
     return {"message": f"Profil {profile_id} wurde gelöscht"}
 
-
-# ==== Profile Data Storage ====
 @app.post("/profiles/{profile_id}/data")
 def save_profile_data_route(profile_id: str, data: dict):
-    """Speichert Daten innerhalb eines bestimmten Profils"""
     try:
         save_profile_data(profile_id, data)
         return {"message": f"Daten für Profil {profile_id} wurden gespeichert"}
@@ -331,7 +373,6 @@ def save_profile_data_route(profile_id: str, data: dict):
 
 @app.get("/profiles/{profile_id}/data")
 def get_profile_data_route(profile_id: str):
-    """Lädt gespeicherte Daten für ein bestimmtes Profil"""
     try:
         data = get_profile_data(profile_id)
         if data is None:
