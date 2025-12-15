@@ -16,6 +16,9 @@ from scipy import stats
 import numpy as np
 import re
 
+# NEUE IMPORTS: Name-Source Router
+from name_source import router as name_source_router
+
 app = FastAPI()
 
 # === CORS-Konfiguration ===
@@ -26,6 +29,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# === Router registrieren ===
+app.include_router(name_source_router)
 
 @app.get("/")
 def root():
@@ -76,12 +82,94 @@ def make_unique_sheet_names(names: list[str]) -> list[str]:
     return out
 
 
-# === Export-Endpunkt ===
+# === Hilfsfunktion für Namensgenerierung ===
+import requests
+
+async def generate_name_values(field_type: str, name_source: str, country: str, count: int):
+    """
+    Hilfsfunktion: Generiert Namen über die Name-Source API
+    """
+    try:
+        # Bestimme name_field_type basierend auf field_type
+        if field_type == "vorname":
+            name_field_type = "vorname"
+        elif field_type == "nachname":
+            name_field_type = "nachname"
+        else:  # "name" oder andere
+            name_field_type = "name"
+        
+        # Rufe die interne API auf
+        response = requests.post(
+            "http://localhost:8000/api/name-source/generate",
+            json={
+                "source_type": "western" if name_source == "western" else "regional",
+                "country": country if name_source == "regional" else None,
+                "name_field_type": name_field_type,
+                "count": count,
+                "gender": None  # Optional: könntest du aus den Felddaten extrahieren
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("names", [])
+        else:
+            print(f"Name-Source API Fehler: {response.status_code}")
+            # Fallback: einfache Namen generieren
+            return generate_fallback_names(field_type, count)
+            
+    except Exception as e:
+        print(f"Fehler bei Namensgenerierung: {e}")
+        return generate_fallback_names(field_type, count)
+
+def generate_fallback_names(field_type: str, count: int):
+    """Fallback: Generiert einfache Namen mit mimesis"""
+    from mimesis import Person
+    person = Person()
+    
+    if field_type == "vorname":
+        return [person.first_name() for _ in range(count)]
+    elif field_type == "nachname":
+        return [person.last_name() for _ in range(count)]
+    else:
+        return [person.full_name() for _ in range(count)]
+
+# === Export-Endpunkt (angepasst für Namensgenerierung) ===
 @app.post("/api/export")
 async def export_data(request: ExportRequest):
-    print(request)
+    print("Export-Request empfangen:", request)
     usedUseCaseIds = request.usedUseCaseIds or []
 
+    # 1. ZUERST: Namensfelder identifizieren und Werte generieren
+    name_fields_to_generate = []
+    for row in request.rows:
+        if row.type in ["vorname", "nachname", "name"]:
+            # Prüfe ob eine Name-Source in der Distribution-Config gespeichert ist
+            dist_config = getattr(row, 'distributionConfig', {})
+            name_source = dist_config.get('name_source')
+            country = dist_config.get('country')
+            
+            if name_source:  # Wenn Name-Source konfiguriert ist
+                name_fields_to_generate.append({
+                    "row_index": request.rows.index(row),
+                    "field_type": row.type,
+                    "name_source": name_source,
+                    "country": country,
+                    "field_name": row.name
+                })
+
+    # 2. Namenswerte generieren (alle auf einmal für Effizienz)
+    generated_values_map = {}
+    for name_field in name_fields_to_generate:
+        values = await generate_name_values(
+            field_type=name_field["field_type"],
+            name_source=name_field["name_source"],
+            country=name_field["country"],
+            count=request.rowCount
+        )
+        generated_values_map[name_field["row_index"]] = values
+
+    # 3. Daten generieren wie bisher
     df_list = []
     for ucid in usedUseCaseIds:
         if ucid.lower() == "logistik":
@@ -101,7 +189,22 @@ async def export_data(request: ExportRequest):
         df = pd.concat(df_list, ignore_index=True)
     else:
         df = pd.DataFrame()
-            
+    
+    # 4. Generierte Namenswerte in das DataFrame einfügen
+    for row_idx, values in generated_values_map.items():
+        if row_idx < len(request.rows):
+            field_name = request.rows[row_idx].name
+            if field_name in df.columns and len(values) == len(df):
+                df[field_name] = values
+            elif field_name in df.columns:
+                # Sicherstellen, dass genug Werte vorhanden sind
+                if len(values) < len(df):
+                    # Wiederhole Werte wenn nötig
+                    repeated_values = (values * (len(df) // len(values) + 1))[:len(df)]
+                    df[field_name] = repeated_values
+                else:
+                    df[field_name] = values[:len(df)]
+
     fmt = request.format.upper()
 
     # === JSON Export ===

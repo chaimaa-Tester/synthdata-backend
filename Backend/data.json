@@ -5,9 +5,9 @@
     "data": {
       "rows": [
         {
-          "id": "1765811573472-0.26796831248233655",
-          "name": "LLLLL",
-          "type": "unitName",
+          "id": "1765824788915-0.3714560622416201",
+          "name": "name",
+          "type": "firstname",
           "dependency": "",
           "distributionConfig": {
             "distribution": "",
@@ -17,26 +17,12 @@
             "dependency": ""
           },
           "valueSource": "default",
-          "customValues": []
-        },
-        {
-          "id": "1765811573472-0.9955037014060468",
-          "name": "KKK",
-          "type": "containerTyp",
-          "dependency": "",
-          "distributionConfig": {
-            "distribution": "",
-            "parameterA": "",
-            "parameterB": "",
-            "extraParams": [],
-            "dependency": ""
-          },
-          "valueSource": "default",
-          "customValues": []
+          "customValues": [],
+          "nameSource": "western"
         }
       ],
       "rowCount": 10,
-      "format": "XLSX",
+      "format": "CSV",
       "lineEnding": "Windows(CRLF)"
     }
   }
