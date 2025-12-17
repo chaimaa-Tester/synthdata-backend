@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "id": "24bdac1a-991e-48d5-9f54-7af188197bcb",
+    "name": "Misk",
+    "data": {
+      "rows": [
+        {
+          "id": "1765824788915-0.3714560622416201",
+          "name": "name",
+          "type": "firstname",
+          "dependency": "",
+          "distributionConfig": {
+            "distribution": "",
+            "parameterA": "",
+            "parameterB": "",
+            "extraParams": [],
+            "dependency": ""
+          },
+          "valueSource": "default",
+          "customValues": [],
+          "nameSource": "western"
+        }
+      ],
+      "rowCount": 10,
+      "format": "CSV",
+      "lineEnding": "Windows(CRLF)"
+    }
+  }
+]

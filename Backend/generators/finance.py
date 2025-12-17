@@ -6,13 +6,6 @@ import pandas as pd
 import numpy as np
 from field_schemas import FrontendField, DistributionConfig
 
-# Mapping von Frontend-Typen (Aliases) auf Backend-Typen
-TYPE_ALIASES = {
-    "kundenname": "name", "kontonummer": "integer", "transaktionsdatum": "date",
-    "email": "email", "telefon": "telefon", "transaktionsart": "transaktionsart",
-    "betrag": "betrag"
-}
-
 TRANSACTION_TYPES: List[str] = [
     "SEPA-Überweisung",
     "Gehalt / Lohn",
@@ -25,8 +18,17 @@ TRANSACTION_TYPES: List[str] = [
     "Abonnement / Abo-Zahlung"
 ]
 
-locale = Locale.DE
-person_gen = Person(locale)
+CREDITCARD_TYPES: List[str] = [
+    "VISA Karte",
+    "Mastercard",
+    "American Express",
+    "Girocard (EC)",
+    "Maestro"
+]
+
+CURRENCY: List [str] = ["EUR", "USD", "CHF", "GBP"]
+                        
+person_gen = Person(Locale.DE)
 
 rng = np.random.default_rng()
 
@@ -39,30 +41,11 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
 
     # 1. Unabhängige Felder generieren
     for field in independent_fields:
-        raw_type = (field.type or "").strip()
-        ftype = TYPE_ALIASES.get(raw_type.lower(), raw_type.lower())
+        ftype = (field.type or "").strip()
         dist_config = field.distributionConfig
         dist = (dist_config.distribution or "").strip().lower() if dist_config else ""
 
-        if ftype in ["name"]:
-            paramA = dist_config.parameterA if dist_config else None
-            paramB = dist_config.parameterB if dist_config else None
-
-            if dist == "categorical":
-                values = _split_list(paramA) or [person_gen.full_name() for _ in range(5)]
-            
-                weights = [_to_float(w, 1.0) for w in _split_list(paramB or "")]
-                if not weights or len(weights) != len(values):
-                    weights = [1.0] * len(values)
-                weights = np.array(weights, dtype=float)
-                weights = weights / weights.sum()
-                # Deterministische exakte Häufigkeitsverteilung, damit kleine Stichproben die Proportionen widerspiegeln
-                data = _categorical_exact(values, weights, num_rows)
-            else:
-                # Standard: Realistische Namen je nach Typ
-                data = [person_gen.full_name() for _ in range(num_rows)]
-
-        elif ftype in ["betrag"]:
+        if ftype in ["betrag"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
 
@@ -84,9 +67,12 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
                 data = _maybe_as_text(arr.tolist(), as_text_for_sheets)
             
             else:
-                data = [round(random.uniform(1, 1000), 2) for _ in range(num_rows)]
+                if field.valueSource == "custom":
+                    data = [random.choice(field.customValues) for _ in range(num_rows)]
+                else:
+                    data = [round(random.uniform(1, 1000), 2) for _ in range(num_rows)]
         
-        elif ftype in ["integer"]:
+        elif ftype in ["IBAN"]:
             paramA = _to_float(dist_config.parameterA) if dist_config else None
             paramB = _to_float(dist_config.parameterB) if dist_config else None
 
@@ -99,7 +85,7 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
             #     data = _maybe_as_text(data, as_text_for_sheets)
             data = [gen_german_account() for _ in range(num_rows)]
         
-        elif ftype in ["date"]:
+        elif ftype in ["transaktionsdatum"]:
             paramA = (dist_config.parameterA if dist_config else None) or "2010-01-01"
             paramB = (dist_config.parameterB if dist_config else None) or "2025-12-31"
             start = pd.to_datetime(paramA).date()
@@ -110,15 +96,24 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
             end_ord = end.toordinal()
             ordinals = rng.integers(start_ord, end_ord + 1, size=num_rows)
             data = [pd.Timestamp.fromordinal(int(o)).date().isoformat() for o in ordinals]
-        
-        elif ftype in ["email"]:
-            data = [person_gen.email(["web.de", "outlook.com", "yahoo.com", "gmail.com", "icloud.com"]) for _ in range(num_rows)]
 
-        elif ftype in ["telefon"]:
-            data = [person_gen.phone_number() for _ in range(num_rows)]
+        elif ftype.lower().startswith("transactiontype"):
+            if field.valueSource == "custom":
+                data = [random.choice(field.customValues) for _ in range(num_rows)]
+            else:
+                data = [random.choice(TRANSACTION_TYPES) for _ in range(num_rows)]
 
-        elif ftype in ["transaktionsart"]:
-            data = [random.choice(TRANSACTION_TYPES) for _ in range(num_rows)]
+        elif ftype == "creditcard":
+            if field.valueSource == "custom":
+                data = [random.choice(field.customValues) for _ in range(num_rows)]
+            else:
+                data = [random.choice(CREDITCARD_TYPES) for _ in range(num_rows)]
+
+        elif ftype == "currency":
+            if field.valueSource == "custom":
+                data = [random.choice(field.customValues) for _ in range(num_rows)]
+            else:
+                data = [random.choice(CURRENCY) for _ in range(num_rows)]
 
         else:
             data = [f"{field.name}_{i}" for i in range(num_rows)]   
@@ -158,8 +153,7 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
             continue
 
         dep_values = columns[dep_key]
-        raw_type = (field.type or "").strip()
-        ftype = TYPE_ALIASES.get(raw_type.lower(), raw_type.lower())
+        ftype = (field.type or "").strip()
 
         if ftype in ["betrag"]:
             amount_ranges = {
@@ -258,6 +252,5 @@ def gen_german_account():
     Generiert:
     - kontonummer: 10-stellige, linksgepadete Nummer (String) + int
     """
-    # realistisch: Kontonummer bis 10 Stellen, oft mit führenden Nullen
     k_num = "".join(str(random.randint(0,9)) for _ in range(10))
     return k_num

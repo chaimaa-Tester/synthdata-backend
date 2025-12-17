@@ -1,7 +1,8 @@
+# backend/main.py
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import List
 from pydantic import BaseModel
-from field_schemas import FieldDefinition, ExportRequest
+from field_schemas import FrontendField, ExportRequest
 import field_storage
 from fastapi.middleware.cors import CORSMiddleware
 import io
@@ -10,8 +11,13 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from generators.health import generate_healthData
 from generators.finance import generate_financeData
 from generators.container import generate_containerData
+from generators.general import generate_generalData
 from scipy import stats
 import numpy as np
+import re
+
+# NEUE IMPORTS: Name-Source Router
+from name_source import router as name_source_router
 
 app = FastAPI()
 
@@ -24,13 +30,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === Router registrieren ===
+app.include_router(name_source_router)
+
 @app.get("/")
 def root():
     return {"message": "Backend läuft"}
 
 # === Felder speichern / abrufen ===
 @app.post("/api/v1/fields")
-async def receive_fields(fields: List[FieldDefinition]):
+async def receive_fields(fields: List[FrontendField]):
     field_storage.save_fields(fields)
     return {"status": "ok", "received_fields": len(fields)}
 
@@ -39,20 +48,163 @@ async def list_fields():
     return field_storage.get_fields()
 
 
-# === Export-Endpunkt ===
+# -------------------------
+# XLSX Sheet helpers
+# -------------------------
+def sanitize_sheet_name(name: str) -> str:
+    r"""
+    Excel-Regeln:
+    - max 31 Zeichen
+    - keine Zeichen: : \ / ? * [ ]
+    - darf nicht leer sein
+    """
+    if not name:
+        return "Sheet"
+    cleaned = re.sub(r"[:\\/?*\[\]]", "", name).strip()
+    if not cleaned:
+        cleaned = "Sheet"
+    return cleaned[:31]
+
+
+def make_unique_sheet_names(names: list[str]) -> list[str]:
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for n in names:
+        base = n
+        if base not in seen:
+            seen[base] = 1
+            out.append(base)
+        else:
+            seen[base] += 1
+            suffix = f" ({seen[base]})"
+            trimmed = base[: max(0, 31 - len(suffix))] + suffix
+            out.append(trimmed)
+    return out
+
+
+# === Hilfsfunktion für Namensgenerierung ===
+import requests
+
+async def generate_name_values(field_type: str, name_source: str, country: str, count: int):
+    """
+    Hilfsfunktion: Generiert Namen über die Name-Source API
+    """
+    try:
+        # Bestimme name_field_type basierend auf field_type
+        if field_type == "vorname":
+            name_field_type = "vorname"
+        elif field_type == "nachname":
+            name_field_type = "nachname"
+        else:  # "name" oder andere
+            name_field_type = "name"
+        
+        # Rufe die interne API auf
+        response = requests.post(
+            "http://localhost:8000/api/name-source/generate",
+            json={
+                "source_type": "western" if name_source == "western" else "regional",
+                "country": country if name_source == "regional" else None,
+                "name_field_type": name_field_type,
+                "count": count,
+                "gender": None  # Optional: könntest du aus den Felddaten extrahieren
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("names", [])
+        else:
+            print(f"Name-Source API Fehler: {response.status_code}")
+            # Fallback: einfache Namen generieren
+            return generate_fallback_names(field_type, count)
+            
+    except Exception as e:
+        print(f"Fehler bei Namensgenerierung: {e}")
+        return generate_fallback_names(field_type, count)
+
+def generate_fallback_names(field_type: str, count: int):
+    """Fallback: Generiert einfache Namen mit mimesis"""
+    from mimesis import Person
+    person = Person()
+    
+    if field_type == "vorname":
+        return [person.first_name() for _ in range(count)]
+    elif field_type == "nachname":
+        return [person.last_name() for _ in range(count)]
+    else:
+        return [person.full_name() for _ in range(count)]
+
+# === Export-Endpunkt (angepasst für Namensgenerierung) ===
 @app.post("/api/export")
 async def export_data(request: ExportRequest):
-    print(request)
-    usedUseCaseIds = request.usedUseCaseIds
+    print("Export-Request empfangen:", request)
+    usedUseCaseIds = request.usedUseCaseIds or []
 
+    # 1. ZUERST: Namensfelder identifizieren und Werte generieren
+    name_fields_to_generate = []
+    for row in request.rows:
+        if row.type in ["vorname", "nachname", "name"]:
+            # Prüfe ob eine Name-Source in der Distribution-Config gespeichert ist
+            dist_config = getattr(row, 'distributionConfig', {})
+            name_source = dist_config.get('name_source')
+            country = dist_config.get('country')
+            
+            if name_source:  # Wenn Name-Source konfiguriert ist
+                name_fields_to_generate.append({
+                    "row_index": request.rows.index(row),
+                    "field_type": row.type,
+                    "name_source": name_source,
+                    "country": country,
+                    "field_name": row.name
+                })
+
+    # 2. Namenswerte generieren (alle auf einmal für Effizienz)
+    generated_values_map = {}
+    for name_field in name_fields_to_generate:
+        values = await generate_name_values(
+            field_type=name_field["field_type"],
+            name_source=name_field["name_source"],
+            country=name_field["country"],
+            count=request.rowCount
+        )
+        generated_values_map[name_field["row_index"]] = values
+
+    # 3. Daten generieren wie bisher
+    df_list = []
     for ucid in usedUseCaseIds:
         if ucid.lower() == "logistik":
-            df = generate_containerData(request.rows, request.rowCount)
+            temp_df = generate_containerData(request.rows, request.rowCount)
+            df_list.append(temp_df)
         elif ucid.lower() == "gesundheit":
-            df = generate_healthData(request.rows, request.rowCount)
+            temp_df = generate_healthData(request.rows, request.rowCount)
+            df_list.append(temp_df)
         elif ucid.lower() == "finanzen":
-            df = generate_financeData(request.rows, request.rowCount)
-            
+            temp_df = generate_financeData(request.rows, request.rowCount)
+            df_list.append(temp_df)
+        elif ucid.lower() == "general":
+            temp_df = generate_generalData(request.rows, request.rowCount)
+            df_list.append(temp_df)
+    
+    if df_list:
+        df = pd.concat(df_list, ignore_index=True)
+    else:
+        df = pd.DataFrame()
+    
+    # 4. Generierte Namenswerte in das DataFrame einfügen
+    for row_idx, values in generated_values_map.items():
+        if row_idx < len(request.rows):
+            field_name = request.rows[row_idx].name
+            if field_name in df.columns and len(values) == len(df):
+                df[field_name] = values
+            elif field_name in df.columns:
+                # Sicherstellen, dass genug Werte vorhanden sind
+                if len(values) < len(df):
+                    # Wiederhole Werte wenn nötig
+                    repeated_values = (values * (len(df) // len(values) + 1))[:len(df)]
+                    df[field_name] = repeated_values
+                else:
+                    df[field_name] = values[:len(df)]
+
     fmt = request.format.upper()
 
     # === JSON Export ===
@@ -70,7 +222,6 @@ async def export_data(request: ExportRequest):
     elif fmt == "SQL":
         table_name = getattr(request, "tableName", "exported_table")
         sql_buffer = io.StringIO()
-
         for _, row in df.iterrows():
             columns = ", ".join(row.index)
             values = []
@@ -80,8 +231,9 @@ async def export_data(request: ExportRequest):
                 else:
                     safe_val = str(v).replace("'", "''")
                     values.append(f"'{safe_val}'")
-            sql_buffer.write(f"INSERT INTO {table_name} ({columns}) VALUES ({', '.join(values)});\n")
-
+            sql_buffer.write(
+                f"INSERT INTO {table_name} ({columns}) VALUES ({', '.join(values)});\n"
+            )
         sql_buffer.seek(0)
         return StreamingResponse(
             sql_buffer,
@@ -92,8 +244,40 @@ async def export_data(request: ExportRequest):
     # === XLSX Export ===
     elif fmt == "XLSX":
         output = io.BytesIO()
+
+        # Fallback: wenn keine Sheets kommen -> 1 Sheet
+        if not request.sheets:
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Daten")
+            output.seek(0)
+            return StreamingResponse(
+                output,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": "attachment; filename=synthdatawizard.xlsx"},
+            )
+
+        # 1) Namen säubern + unique machen
+        raw_names = [sanitize_sheet_name(s.name) for s in request.sheets]
+        unique_names = make_unique_sheet_names(raw_names)
+
+        # 2) Pro Sheet: nur die ausgewählten Spalten exportieren
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Sheet 1")
+            for sheet_cfg, sheet_name in zip(request.sheets, unique_names):
+                wanted = [c for c in sheet_cfg.fieldNames if c in df.columns]
+
+                # Debug-Hilfe (falls leer)
+                if len(wanted) == 0:
+                    print("WARN: Sheet hat keine passenden Spalten:", sheet_cfg.name)
+                    print("wanted fieldNames:", sheet_cfg.fieldNames)
+                    print("df.columns:", list(df.columns))
+
+                    # Optional: leeres Sheet schreiben
+                    pd.DataFrame().to_excel(writer, index=False, sheet_name=sheet_name)
+                    continue
+
+                df_sheet = df[wanted].copy()
+                df_sheet.to_excel(writer, index=False, sheet_name=sheet_name)
+
         output.seek(0)
         return StreamingResponse(
             output,
@@ -104,7 +288,7 @@ async def export_data(request: ExportRequest):
     # === CSV Export (Standard) ===
     else:
         separator = "," if fmt == "CSV" else ";"
-        line_end = "\r\n" if "CRLF" in request.lineEnding.upper() else "\n"
+        line_end = "\r\n" if "CRLF" in (request.lineEnding or "").upper() else "\n"
 
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False, sep=separator, lineterminator=line_end)
@@ -205,15 +389,6 @@ async def detect_distribution_column(file: UploadFile = File(...), column: str =
     }
 
 
-
-# @app.post("/api/export")
-# async def export_debug(request: Request):
-#     body = await request.json()
-#     print("📦 Eingehende Rohdaten vom Frontend:")
-#     print(body)
-#     return {"status": "debug"}
-
-
 # ==== Custom Distribution Fitting API ====
 class DistributionFitRequest(BaseModel):
     points: list[float]
@@ -222,11 +397,10 @@ class DistributionFitRequest(BaseModel):
 @app.post("/api/fit-distribution")
 async def fit_distribution(request: DistributionFitRequest):
     points = np.array(request.points, dtype=float)
-    # Remove NaN/infinite
     points = points[np.isfinite(points)]
     if len(points) < 2:
         return JSONResponse(status_code=400, content={"error": "Not enough points"})
-    # Normalize to [0, 1]
+
     min_val = np.min(points)
     max_val = np.max(points)
     if max_val - min_val > 0:
@@ -234,7 +408,6 @@ async def fit_distribution(request: DistributionFitRequest):
     else:
         norm_points = np.zeros_like(points)
 
-    # List of distributions to test
     candidates = {
         "norm": stats.norm,
         "lognorm": stats.lognorm,
@@ -247,6 +420,7 @@ async def fit_distribution(request: DistributionFitRequest):
     best_fit = None
     best_p = -np.inf
     best_params = None
+
     for name, dist in candidates.items():
         try:
             params = dist.fit(norm_points)
@@ -282,17 +456,16 @@ async def fit_distribution(request: DistributionFitRequest):
         },
     }
 
+
 # ==== Profile Management (JSON-Speicherung) ====
 from storage_manager import load_profiles, add_profile, delete_profile, save_profile_data, get_profile_data
 
 @app.get("/profiles")
 def get_profiles():
-    """Lädt alle gespeicherten Profile aus data.json"""
     return load_profiles()
 
 @app.post("/profiles")
 def create_profile(profile: dict):
-    """Erstellt ein neues Profil und speichert es in data.json"""
     name = profile.get("name")
     if not name:
         return {"error": "Name ist erforderlich"}
@@ -301,15 +474,11 @@ def create_profile(profile: dict):
 
 @app.delete("/profiles/{profile_id}")
 def remove_profile(profile_id: str):
-    """Löscht ein bestehendes Profil aus data.json"""
     delete_profile(profile_id)
     return {"message": f"Profil {profile_id} wurde gelöscht"}
 
-
-# ==== Profile Data Storage ====
 @app.post("/profiles/{profile_id}/data")
 def save_profile_data_route(profile_id: str, data: dict):
-    """Speichert Daten innerhalb eines bestimmten Profils"""
     try:
         save_profile_data(profile_id, data)
         return {"message": f"Daten für Profil {profile_id} wurden gespeichert"}
@@ -318,7 +487,6 @@ def save_profile_data_route(profile_id: str, data: dict):
 
 @app.get("/profiles/{profile_id}/data")
 def get_profile_data_route(profile_id: str):
-    """Lädt gespeicherte Daten für ein bestimmtes Profil"""
     try:
         data = get_profile_data(profile_id)
         if data is None:
