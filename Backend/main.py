@@ -12,6 +12,7 @@ from generators.health import generate_healthData
 from generators.finance import generate_financeData
 from generators.container import generate_containerData
 from generators.general import generate_generalData
+from dbhandler import connect_to_DB
 from scipy import stats
 import numpy as np
 import re
@@ -457,40 +458,80 @@ async def fit_distribution(request: DistributionFitRequest):
     }
 
 
-# ==== Profile Management (JSON-Speicherung) ====
+# ==== Profile Management ==== (Erstellt: Burak Arabaci, Überarbeitet: Jan Krämer)
 from storage_manager import load_profiles, add_profile, delete_profile, save_profile_data, get_profile_data
 
 @app.get("/profiles")
 def get_profiles():
-    return load_profiles()
+    """
+    Lädt alle gespeicherten Profile aus der DB.
+    """
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden!"})
+    return load_profiles(connect_to_DB())
 
 @app.post("/profiles")
 def create_profile(profile: dict):
+    """
+    Erstellt ein neues Profil und speichert es in der DB.
+    
+    :param profile: Beschreibung
+    :type profile: dict
+    """
     name = profile.get("name")
     if not name:
-        return {"error": "Name ist erforderlich"}
-    new_profile = add_profile(name)
+        return {"error": "Name ist erforderlich!"}
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden!"})
+    new_profile = add_profile(connect_to_DB(), name)
     return new_profile
+        
 
-@app.delete("/profiles/{profile_id}")
-def remove_profile(profile_id: str):
-    delete_profile(profile_id)
-    return {"message": f"Profil {profile_id} wurde gelöscht"}
+@app.delete("/profiles/{db_id}")
+def remove_profile(db_id: str):
+    """
+    Löscht bestehendes Profil aus der DB.
+    
+    :param db_id: Die ID des zu löschenden Profils aus der DB.
+    :type db_id: str
+    """
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden!"})
+    delete_profile(connect_to_DB(), db_id)
+    return {"message": f"Profil {db_id} wurde gelöscht."}
 
-@app.post("/profiles/{profile_id}/data")
-def save_profile_data_route(profile_id: str, data: dict):
+@app.post("/profiles/{db_id}/data")
+def save_profile_data_route(db_id: str, data: dict):
+    """
+    Speichert die eingegebenen Daten innerhalb eines Profils.
+    
+    :param db_id: Die zugehörige ID des Profils.
+    :type db_id: str
+    :param data: Die eingegeben Daten aus der UI.
+    :type data: dict
+    """
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden!"})
     try:
-        save_profile_data(profile_id, data)
-        return {"message": f"Daten für Profil {profile_id} wurden gespeichert"}
+        save_profile_data(connect_to_DB(), db_id, data)
+        return {"message": f"Daten für Profil {db_id} gespeichert."}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-@app.get("/profiles/{profile_id}/data")
-def get_profile_data_route(profile_id: str):
+@app.get("/profiles/{db_id}/data")
+def get_profile_data_route(db_id: str):
+    """
+    Lädt die gespeicherten Daten, für das angegebene Profil, aus der DB.
+    
+    :param db_id: Beschreibung
+    :type db_id: str
+    """
+    if not connect_to_DB():
+        return JSONResponse(status_code=503, content={"error": "DB nicht verbunden!"})
     try:
-        data = get_profile_data(profile_id)
+        data = get_profile_data(connect_to_DB(), db_id)
         if data is None:
-            return {"data": {}}
+            return {"data":{}}
         return {"data": data}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

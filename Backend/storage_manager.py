@@ -1,51 +1,51 @@
 import json
-import os
 import uuid
+import psycopg as pg
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), "data.json")
+def _execute_query(conn, sql: str, params=None, fetch_one=False, fetch_all=False):
+    """
+    Hilfsmethode zum Ausführen von Queries und den Handling von Commit/ Rollback Aktionen.
+    
+    :param conn: Das Connection Objekt zum verbinden mit der DB.
+    :param sql: Die SQL Abfrage welche an die DB geschickt wird.
+    :type sql: str
+    :param params: Die Parameter welche in die SQL Abfrage eingefügt werden. Default None.
+    :param fetch_one: Wenn True wird aus dem Ergebnis der Query nur ein Wert gelesen.
+    :param fetch_all: Wenn True werden alle Werte aus dem Ergebnis der Query gelesen.
+    """
+    try:
+        # Cursor mit dem Verbindungsobjekt erstellen
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
 
-"""Lädt alle gespeicherten Profile."""
-def load_profiles():
-    if not os.path.exists(DATA_PATH):
+            if fetch_one:
+                return cur.fetchone()
+            if fetch_all:
+                return cur.fetchall()
+
+            # Änderungen committen, wenn es sich um INSERT/UPDATE/DELETE handelt
+            conn.commit()
+            print("Committed!")
+    except pg.Error as e:
+        conn.rollback()
+        # Fehlerbehandlung: Ausgabe im Terminal
+        print(f"Datenbankfehler bei Ausführung von '{sql[:50]}...': {e}")
+        raise
+
+def load_profiles(conn):
+    """
+    Lädt alle gespeicherten Profile aus der DB.
+    
+    :param conn: Das Connection Objekt der DB.
+    """
+    sql = "SELECT db_id, name FROM synthdata ORDER BY db_id DESC;"
+    results = _execute_query(conn, sql, fetch_all=True)
+    print(f"id={db_id}, name={name}" for db_id, name in results)
+    conn.close()    
+
+    if not results:
         return []
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except Exception:
-            return []
+    profiles = [{"id": str(db_id), "name": name} for db_id, name in results]
+    return profiles
 
-"""Speichert alle Profile in data.json."""
-def save_profiles(profiles):
-    with open(DATA_PATH, "w", encoding="utf-8") as f:
-        json.dump(profiles, f, ensure_ascii=False, indent=2)
-
-"""Fügt ein neues Profil hinzu."""
-def add_profile(name):
-    profiles = load_profiles()
-    new_profile = {"id": str(uuid.uuid4()), "name": name}
-    profiles.append(new_profile)
-    save_profiles(profiles)
-    return new_profile
-
-"""Löscht ein Profil anhand seiner ID."""
-def delete_profile(id):
-    profiles = load_profiles()
-    profiles = [p for p in profiles if p.get("id") != id]
-    save_profiles(profiles)
-
-"""Speichert Daten innerhalb eines bestimmten Profils."""
-def save_profile_data(profile_id, data):
-    profiles = load_profiles()
-    for profile in profiles:
-        if profile.get("id") == profile_id:
-            profile["data"] = data
-            break
-    save_profiles(profiles)
-
-"""Lädt gespeicherte Daten eines bestimmten Profils."""
-def get_profile_data(profile_id):
-    profiles = load_profiles()
-    for profile in profiles:
-        if profile.get("id") == profile_id:
-            return profile.get("data", {})
-    return {}
+# TODO: Implementierung der fehlenden Manager Methoden
