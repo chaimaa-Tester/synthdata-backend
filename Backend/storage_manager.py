@@ -1,6 +1,7 @@
 import json
-import uuid
 import psycopg as pg
+
+# === Diese Klasse wurde erstellt von Burak Arabaci. Überarbeitet von Jan Krämer zur Verbindung auf die DB. ===
 
 def _execute_query(conn, sql: str, params=None, fetch_one=False, fetch_all=False):
     """
@@ -48,4 +49,105 @@ def load_profiles(conn):
     profiles = [{"id": str(db_id), "name": name} for db_id, name in results]
     return profiles
 
-# TODO: Implementierung der fehlenden Manager Methoden
+def add_profiles(conn, name):
+    """
+    Fügt ein neues Profil in die DB.
+    
+    :param conn: Das Connection Objekt der DB.
+    :param name: Name des erstellten Profils.
+    """
+    sql = """
+        INSERT INTO synthdata (name, row_count, format, line_ending, rows_data)
+        VALUES (%s,%s,%s,%s,%s) RETURNING db_id;
+    """
+
+    # Die beigefügten Daten sind Standarddaten aus der UI.
+    params = (
+        name,
+        10,
+        "CSV",
+        "Windows(CRLF)",
+        json.dumps([])
+    )
+
+    result= _execute_query(conn, sql, params, fetch_one=True)
+    conn.commit()
+    print("Committed!")
+    conn.close()
+
+    if result:
+        new_id = result[0]
+        print(f"id={new_id}, name={name}")
+        return {"id": str(new_id), "name": name}
+    return None
+
+def delete_profile(conn, db_id):
+    """
+    Löscht das angegebene Profil aus der DB anhand seiner ID.
+    
+    :param conn: Das Connection Objekt der DB.
+    :param db_id: Die ID des Profils in der DB.
+    """
+    sql = "DELETE FROM synthdata WHERE db_id = %s;"
+    _execute_query(conn, sql, (db_id,))
+
+def save_profile_data(conn, db_id, data):
+    """
+    Speichert die Daten innerhalb eines bestimmten Profils.
+    
+    :param conn: Das Connection Objekt der DB.
+    :param db_id: Die ID des Profils in der DB.
+    :param data: Die Daten aus der UI welche per JSON Dump in der DB gespeichert werden.
+    """
+    rows_data = data.get("rows", [])
+    print(rows_data)
+    row_count = data.get("rowCount", 10)
+    print(row_count)
+    fmt = data.get("format", "CSV")
+    print(fmt)
+    line_ending = data.get("lineEnding", "Windows(CRLF)")
+    print(line_ending)
+    print(db_id)
+
+    sql = """
+        UPDATE synthdata
+        SET rows_data = %s, row_count = %s, format = %s, line_ending = %s
+        WHERE db_id = %s;
+    """
+    params = (
+        json.dumps(rows_data),
+        row_count,
+        fmt,
+        line_ending,
+        db_id
+    )
+
+    _execute_query(conn, sql, params)
+    conn.close()
+
+def get_profile_data(conn, db_id):
+    """
+    Lädt gespeicherte Daten des angegebenen Profils.
+    
+    :param conn: Das Connection Objekt der DB.
+    :param db_id: Die ID des Profils in der DB.
+    """
+    sql = """
+        SELECT rows_data, row_count, format, line_ending
+        FROM synthdata
+        WHERE db_id = %s;
+    """
+    result = _execute_query(conn, sql, (db_id,), fetch_one=True)    
+    conn.close()
+    print(result)
+
+    if result:
+        rows_data, row_count, fmt, line_ending = result
+
+        return {
+            "rows": rows_data,
+            "rowCount": row_count,
+            "format": fmt,
+            "lineEnding": line_ending
+        }
+    return {}
