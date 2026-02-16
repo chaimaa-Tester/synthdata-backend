@@ -49,7 +49,7 @@ def load_profiles(conn):
     profiles = [{"id": str(db_id), "name": name} for db_id, name in results]
     return profiles
 
-def add_profiles(conn, name):
+def add_profile(conn, name):
     """
     Fügt ein neues Profil in die DB.
     
