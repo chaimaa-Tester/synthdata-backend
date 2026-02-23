@@ -101,7 +101,7 @@ async def generate_name_values(field_type: str, name_source: str, country: str, 
         
         # Rufe die interne API auf
         response = requests.post(
-            "/api/name-source/generate",
+            "/name-source/generate",
             json={
                 "source_type": "western" if name_source == "western" else "regional",
                 "country": country if name_source == "regional" else None,
@@ -136,7 +136,7 @@ def generate_fallback_names(field_type: str, count: int):
         return [person.full_name() for _ in range(count)]
 
 # === Export-Endpunkt (angepasst für Namensgenerierung) ===
-@app.post("/api/export")
+@app.post("/export")
 async def export_data(request: ExportRequest):
     print("Export-Request empfangen:", request)
     usedUseCaseIds = request.usedUseCaseIds or []
@@ -302,7 +302,7 @@ async def export_data(request: ExportRequest):
 
 
 # === Distribution Detection ===
-@app.post("/api/detect-distribution")
+@app.post("/detect-distribution")
 async def detect_distribution(file: UploadFile = File(...)):
     contents = await file.read()
     try:
@@ -319,7 +319,7 @@ async def detect_distribution(file: UploadFile = File(...)):
     return {"columns": columns}
 
 
-@app.post("/api/detect-distribution/column")
+@app.post("/detect-distribution/column")
 async def detect_distribution_column(file: UploadFile = File(...), column: str = Form(...)):
     contents = await file.read()
     try:
@@ -395,7 +395,7 @@ class DistributionFitRequest(BaseModel):
     points: list[float]
 
 
-@app.post("/api/fit-distribution")
+@app.post("/fit-distribution")
 async def fit_distribution(request: DistributionFitRequest):
     points = np.array(request.points, dtype=float)
     points = points[np.isfinite(points)]
@@ -461,7 +461,7 @@ async def fit_distribution(request: DistributionFitRequest):
 # ==== Profile Management ==== (Erstellt: Burak Arabaci, Überarbeitet: Jan Krämer)
 from storage_manager import load_profiles, add_profile, delete_profile, save_profile_data, get_profile_data
 
-@app.get("/api/profiles")
+@app.get("/profiles")
 def get_profiles():
     """
     Lädt alle gespeicherten Profile aus der DB.
@@ -470,7 +470,7 @@ def get_profiles():
         return JSONResponse(status_code=503, content={"error": "DB nicht verbunden!"})
     return load_profiles(connect_to_DB())
 
-@app.post("/api/profiles")
+@app.post("/profiles")
 def create_profile(profile: dict):
     """
     Erstellt ein neues Profil und speichert es in der DB.
@@ -487,7 +487,7 @@ def create_profile(profile: dict):
     return new_profile
         
 
-@app.delete("/api/profiles/{db_id}")
+@app.delete("/profiles/{db_id}")
 def remove_profile(db_id: str):
     """
     Löscht bestehendes Profil aus der DB.
@@ -518,7 +518,7 @@ def save_profile_data_route(db_id: str, data: dict):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-@app.get("/api/profiles/{db_id}/data")
+@app.get("/profiles/{db_id}/data")
 def get_profile_data_route(db_id: str):
     """
     Lädt die gespeicherten Daten, für das angegebene Profil, aus der DB.
