@@ -1,11 +1,33 @@
+"""
+--------------------------------------------------------------------
+Projekt: SynthData Wizard
+Modul: storage_manager.py
+Autor: Burak Arabaci
+Überarbeitet: Jan Krämer
+
+Beschreibung:
+Dieses Modul kapselt die JSON-basierte Persistenz der Profile.
+Die Profile werden in einer PostgreSQL Datenbank gespeichert.
+
+Funktionaler Umfang:
+- Laden aller Profile aus der Datenbank.
+- Speichern aller Profile in der Datenbank.
+- Hinzufügen eines neuen Profils (db_id als ID)
+- Löschen eines Profils anhand seiner ID
+- Speichern profilbezogener Daten (z.B. Konfigurationen)
+- Abrufen profilbezogener Daten
+- Es wird ein Connection Objekt der db_handler.py verwendet
+- Die Connection wird nach jedem Aufruf geschlossen
+--------------------------------------------------------------------
+
+"""
+
 import json
 import psycopg as pg
 
-# === Diese Klasse wurde erstellt von Burak Arabaci. Überarbeitet von Jan Krämer zur Verbindung auf die DB. ===
-
 def _execute_query(conn, sql: str, params=None, fetch_one=False, fetch_all=False):
     """
-    Hilfsmethode zum Ausführen von Queries und den Handling von Commit/ Rollback Aktionen.
+    Hilfsmethode zum Ausführen von Queries und dem Handling von Commit/ Rollback Aktionen.
     
     :param conn: Das Connection Objekt zum verbinden mit der DB.
     :param sql: Die SQL Abfrage welche an die DB geschickt wird.
@@ -35,7 +57,8 @@ def _execute_query(conn, sql: str, params=None, fetch_one=False, fetch_all=False
 
 def load_profiles(conn):
     """
-    Lädt alle gespeicherten Profile aus der DB.
+    Lädt alle gespeicherten Profile aus der DB. Sollten noch keine gespeicherten
+    Profile vorliegen wird eine leere Liste zurück gegeben.
     
     :param conn: Das Connection Objekt der DB.
     """
@@ -49,12 +72,14 @@ def load_profiles(conn):
     profiles = [{"id": str(db_id), "name": name} for db_id, name in results]
     return profiles
 
-def add_profile(conn, name):
+def add_profile(conn, name: str):
     """
-    Fügt ein neues Profil in die DB.
+    Fügt ein neues Profil in die DB hinzu. Dabei wird automatisch die ID
+    in der Datenbank Tabelle als Profil ID festgelegt.
     
     :param conn: Das Connection Objekt der DB.
     :param name: Name des erstellten Profils.
+    :type name: string
     """
     sql = """
         INSERT INTO synthdata (name, row_count, format, line_ending, rows_data)
@@ -83,7 +108,7 @@ def add_profile(conn, name):
 
 def delete_profile(conn, db_id):
     """
-    Löscht das angegebene Profil aus der DB anhand seiner ID.
+    Löscht das angegebene Profil, und all seine Daten, aus der DB anhand seiner DB ID.
     
     :param conn: Das Connection Objekt der DB.
     :param db_id: Die ID des Profils in der DB.
@@ -93,7 +118,7 @@ def delete_profile(conn, db_id):
 
 def save_profile_data(conn, db_id, data):
     """
-    Speichert die Daten innerhalb eines bestimmten Profils.
+    Speichert die Eingaben des Nutzers innerhalb seines Profils.
     
     :param conn: Das Connection Objekt der DB.
     :param db_id: Die ID des Profils in der DB.
@@ -127,7 +152,7 @@ def save_profile_data(conn, db_id, data):
 
 def get_profile_data(conn, db_id):
     """
-    Lädt gespeicherte Daten des angegebenen Profils.
+    Lädt gespeicherte Daten aus der DB anhand der zugehörigen DB ID.
     
     :param conn: Das Connection Objekt der DB.
     :param db_id: Die ID des Profils in der DB.

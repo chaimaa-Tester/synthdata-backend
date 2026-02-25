@@ -3,7 +3,8 @@ import psycopg as pg
 
 def connect_to_DB() -> pg.Connection:
     """
-    Diese Methode wird verwendet um eine Verbindung zur DB herzustellen.
+    Diese Methode wird verwendet um eine Verbindung zur DB herzustellen. Danach wird ein Connection Objekt zurück gegeben
+    welches alle Informationen enthält, mit denen sich andere Methoden zur DB verbinden können.
     
     :return: Gibt ein Connection-Objekt zurück mit Details zum verbinden auf die DB.
     :rtype: Connection[TupleRow]
