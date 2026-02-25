@@ -1,3 +1,28 @@
+"""
+--------------------------------------------------------------------
+Projekt: SynthData Wizard
+Datei: backend/main.py
+Autor: Marouane Bouhamza
+
+Beschreibung:
+Dieses Backend stellt REST-Endpunkte bereit, um:
+1) Felddefinitionen vom Frontend zu speichern/abrufen
+2) synthetische Datensätze für verschiedene Use-Cases zu generieren
+3) Datensätze in verschiedene Formate zu exportieren (CSV, JSON, SQL, XLSX)
+4) Verteilungsanalyse (Distribution Detection / Fitting) auf hochgeladenen Daten durchzuführen
+5) Profile (Konfigurationszustände) als JSON zu verwalten
+
+Export-Funktion:
+   - Generierung synthetischer Datensätze basierend auf Use-Cases und Felddefinitionen
+   - Spezielle Behandlung für Namensfelder über eine interne Name-Source-API
+   - Export der generierten Daten in JSON / SQL / XLSX / CSV
+
+Technologien:
+- FastAPI (Web API)
+- pandas (Tabellenverarbeitung / Export)
+- scipy.stats + numpy (statistische Fits / Verteilungstests)
+--------------------------------------------------------------------
+"""
 # backend/main.py
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import List
