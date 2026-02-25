@@ -3,7 +3,7 @@
 Projekt: SynthData Wizard
 Datei: backend/main.py (Auszug)
 Autor: Burak Arabaci
-Datum: [Abgabedatum eintragen]
+
 
 Beschreibung:
 Dieser Code-Ausschnitt implementiert zentrale Backend-Funktionen für die
@@ -13,7 +13,7 @@ SynthData-Wizard-Anwendung. Er umfasst:
    - Laden, Erstellen und Löschen von Profilen
    - Speichern und Abrufen profilbezogener Konfigurationsdaten
 
-2) Export-Funktion:
+2) Export-Funktion (Erstellt von Marouane Bouhamza):
    - Generierung synthetischer Datensätze basierend auf Use-Cases und Felddefinitionen
    - Spezielle Behandlung für Namensfelder über eine interne Name-Source-API
    - Export der generierten Daten in JSON / SQL / XLSX / CSV
