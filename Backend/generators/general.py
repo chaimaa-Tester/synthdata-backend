@@ -1,10 +1,9 @@
 # generator_general.py
-# Autor: CHAIMAA KARIOUI
+# Autoren: CHAIMAA KARIOUI, Jan Krämer
 
 """
 Projekt: SynthData Wizard
 Datei: generator_general.py
-Autor: CHAIMAA KARIOUI
 
 Beschreibung:
 Dieses Modul erzeugt synthetische "Allgemeine Daten" (General Use Case) für den SynthData Wizard.

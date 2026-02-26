@@ -1,7 +1,7 @@
 """
 Autor: Jan Krämer
 
-Diese Klasse implementiert die Funktionalität zum Verbindungsaufbau mit der PostgreSQL Datenbank.
+Die Methode implementiert die Funktionalität zum Verbindungsaufbau mit der PostgreSQL Datenbank.
 Sie wird von der storage_manager.py verwendet um den Methoden ein Verbindungsobjekt zu übergeben.
 """
 

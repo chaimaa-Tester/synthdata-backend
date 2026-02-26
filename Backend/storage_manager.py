@@ -2,8 +2,7 @@
 --------------------------------------------------------------------
 Projekt: SynthData Wizard
 Modul: storage_manager.py
-Autor: Burak Arabaci
-Überarbeitet: Jan Krämer
+Autor: Burak Arabaci, Jan Krämer
 
 Beschreibung:
 Dieses Modul kapselt die JSON-basierte Persistenz der Profile.
