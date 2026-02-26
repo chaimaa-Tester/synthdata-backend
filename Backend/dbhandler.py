@@ -1,5 +1,11 @@
-import psycopg as pg
+"""
+Autor: Jan Krämer
 
+Diese Klasse implementiert die Funktionalität zum Verbindungsaufbau mit der PostgreSQL Datenbank.
+Sie wird von der storage_manager.py verwendet um den Methoden ein Verbindungsobjekt zu übergeben.
+"""
+
+import psycopg as pg
 
 def connect_to_DB() -> pg.Connection:
     """

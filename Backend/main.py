@@ -53,7 +53,6 @@ from generators.general import generate_generalData
 
 # Request-/Field-Schemas (Frontend -> Backend Contract)
 from field_schemas import FrontendField, ExportRequest
-import field_storage
 from typing import List
 
 # Profil-Persistenz (JSON-basiert) wird ausgelagert verwaltet
@@ -86,16 +85,6 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {"message": "Backend läuft"}
-
-# === Felder speichern / abrufen ===
-@app.post("/api/v1/fields")
-async def receive_fields(fields: List[FrontendField]):
-    field_storage.save_fields(fields)
-    return {"status": "ok", "received_fields": len(fields)}
-
-@app.get("/api/v1/fields")
-async def list_fields():
-    return field_storage.get_fields()
 
 # ============================================================
 # Hilfsfunktionen: Namensgenerierung (Name-Source + Fallback)
