@@ -2,7 +2,7 @@
 --------------------------------------------------------------------
 Projekt: SynthData Wizard
 Datei: main.py
-Autoren: Burak Arabaci, Jan Krämer
+Autoren: Burak Arabaci, Jan Krämer, Marouane Bouahamza, Chaimaa Karioui
 
 Beschreibung:
 Dieser Code-Ausschnitt implementiert zentrale Backend-Funktionen für die
