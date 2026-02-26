@@ -159,7 +159,15 @@ def generate_fallback_names(field_type: str, count: int):
     else:
         return [person.full_name() for _ in range(count)]
 
-# === Export-Endpunkt (angepasst für Namensgenerierung) ===
+# =========================================================
+# Export-Endpunkt
+# =========================================================
+# Dieser Endpunkt ist das Kernstück:
+# 1) (Optional) Namenswerte vorab generieren (Name-Source)
+# 2) DataFrames pro Use-Case generieren
+# 3) DataFrames zusammenführen
+# 4) Export in das gewünschte Format (JSON/SQL/XLSX/CSV)
+
 @app.post("/api/export")
 async def export_data(request: ExportRequest):
     print("Export-Request empfangen:", request)
