@@ -168,7 +168,7 @@ def generate_fallback_names(field_type: str, count: int):
 # Export-Endpunkt: Generierung + Ausgabe (JSON/SQL/XLSX/CSV)
 # ============================================================
 
-@app.post("/api/export")
+@app.post("/export")
 async def export_data(request: ExportRequest):
     """
     Exportiert synthetische Daten anhand eines ExportRequest.
