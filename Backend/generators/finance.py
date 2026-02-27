@@ -1,3 +1,5 @@
+# === Autor: Jan Krämer ===
+
 from typing import List, Optional
 from mimesis import *
 from mimesis.enums import *
@@ -6,6 +8,8 @@ import pandas as pd
 import numpy as np
 from field_schemas import FrontendField, DistributionConfig
 
+# Vordefinierte Listen an möglichen Werten für Transaktionstypen
+# Kredikarten und Währungen, welche vom User noch bearbeitet werden können
 TRANSACTION_TYPES: List[str] = [
     "SEPA-Überweisung",
     "Gehalt / Lohn",
@@ -28,11 +32,29 @@ CREDITCARD_TYPES: List[str] = [
 
 CURRENCY: List [str] = ["EUR", "USD", "CHF", "GBP"]
                         
+# Ein Generator zum Erstellen personenbezogener Daten
 person_gen = Person(Locale.DE)
-
+# Generator zum Erstellen verschiedener Verteilungen
 rng = np.random.default_rng()
 
 def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for_sheets: bool = False) -> pd.DataFrame:
+    """
+    Diese Methode enthält die Hauptfunktionalitäten zum Erstellen von Finanzdaten, mit dem SynthData Wizard.
+    Es werden die Felder aus dem Frontend ausgelesen und zur Erstellung von einem Finanz-Datensatz verwendet.
+    Dabei wird auch überprüft ob eine Verteilung vorliegt, und falls ja mit welchen Parametern diese berechnet
+    werden soll. Liegt keine Verteilung vor werden einfach die vorher erstellten Generatoren zur zufälligen
+    Generierung von Daten verwendet.
+    Es wird außerdem auf Abhängigkeiten geachtet und diese werden entsprechend verarbeitet.
+
+    :param fields: Eine Liste der Felder, welche die Eingaben des Nutzers enthalten.
+    :type fields: List[FrontendField]
+    :param num_rows: Anzahl der zu erstellenden Reihen im Datensatz.
+    :type num_rows: int
+    :param as_text_for_sheets: Ob ein Parameter als Text ausgegeben werden soll oder nicht. Nützlich bei der Verwendung von Gleitkommazahlen mit "." oder ",".
+    :type as_text_for_sheets: bool
+    :return: Ein DataFrame Objekt welches die erzeugten Daten enthält.
+    :rtype: DataFrame
+    """
     columns: dict[str, list] = {}
 
     # Felder trennen, erst unabhängig dann abhängig
@@ -46,9 +68,12 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
         dist = (dist_config.distribution or "").strip().lower() if dist_config else ""
 
         if ftype in ["betrag"]:
-            paramA = _to_float(dist_config.parameterA) if dist_config else None
-            paramB = _to_float(dist_config.parameterB) if dist_config else None
+            # Falls angegeben, werden die Parameter der Verteilung ausgelesen
+            paramA = float(dist_config.parameterA) if dist_config else None
+            paramB = float(dist_config.parameterB) if dist_config else None
 
+            # Die möglichen Verteilungen pro Feldtyp werden, durch das Frontend, schon vorgegeben
+            # und dann hier abgefragt und zum Berechnen der Daten verwendet.
             if dist == "uniform":
                 low = paramA if paramA is not None else 0
                 high = paramB if paramB is not None else 999999999
@@ -66,6 +91,7 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
                 arr = np.round(arr.astype(float), 1)
                 data = _maybe_as_text(arr.tolist(), as_text_for_sheets)
             
+            # Fallback, falls keine Verteilung angegeben wurde.
             else:
                 if field.valueSource == "custom":
                     data = [random.choice(field.customValues) for _ in range(num_rows)]
@@ -73,16 +99,6 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
                     data = [round(random.uniform(1, 1000), 2) for _ in range(num_rows)]
         
         elif ftype in ["IBAN"]:
-            paramA = _to_float(dist_config.parameterA) if dist_config else None
-            paramB = _to_float(dist_config.parameterB) if dist_config else None
-
-            # if dist == "uniform":
-            #     low = int(paramA or 0)
-            #     high = int(paramB or 100)
-            #     if high < low:
-            #         high = low
-            #     data = [random.randint(low, high) for _ in range(num_rows)]
-            #     data = _maybe_as_text(data, as_text_for_sheets)
             data = [gen_german_account() for _ in range(num_rows)]
         
         elif ftype in ["transaktionsdatum"]:
@@ -122,12 +138,18 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
 
     # 2. Abhängige Felder generieren
     for field in dependent_fields:
+        # Es wird zuerst die Abhängigkeit aus den Daten entnommen und Leerzeichen entfernt.
         dep_raw = (field.dependency or "").strip()
 
+        # Fallback, falls keine Abhängigkeit erkannt werden konnte. Gilt als Absicherung sollte aber
+        # nicht vorkommen da diese schon im ersten Teil berechnet werden.
         if not dep_raw:
             columns[field.name] = [f"{field.name}_{i}" for i in range(num_rows)]
             continue
 
+        # Es wird der entsprechende Schlüsselwert aus den Spalten gesucht und als Abhängigkeitswert festgelegt.
+        # Falls keiner zugeordnet werden kann wird in allen verfügbaren Spalten danach gesucht oder eine
+        # Warning geloggt.
         dep_key = None
         if dep_raw in columns:
             dep_key = dep_raw
@@ -152,9 +174,12 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
             columns[field.name] = [None] * num_rows
             continue
 
+        # Für die entsprechende abhängige Spalte werden alle zu vergleichenden Werte ausgelesen.
         dep_values = columns[dep_key]
         ftype = (field.type or "").strip()
 
+        # Abhängigkeit ist festgelegt und beinhaltet realitätsnahe Werte, welche pro Überweisungsart
+        # in Frage kommen.
         if ftype in ["betrag"]:
             amount_ranges = {
                 "SEPA-Überweisung": (10, 5000),
@@ -179,62 +204,12 @@ def generate_financeData(fields: List[FrontendField], num_rows: int, as_text_for
     return pd.DataFrame(columns)
 
 
-
-
-def _to_float(value, default: Optional[float] = None) -> Optional[float]:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-           
-def _split_list(s: Optional[str]) -> list[str]:
-    if not s:
-        return []
-    return [x.strip() for x in s.split(",") if x.strip()]
-
-def _categorical_exact(values: list, weights: np.ndarray, size: int) -> list:
-    """Gibt eine Liste der Länge `size` zurück, deren Elemente entsprechend den Gewichten verteilt sind.
-    Es wird deterministisch gerundet: zunächst floor(weights*size) und verbleibende Elemente
-    nach dem größten Anteil (Methode des größten Restes) verteilt. Das Ergebnis wird
-    anschließend durchmischt.
-    """
-    if len(values) == 0:
-        return [None] * size
-    if weights is None or len(weights) != len(values):
-        return [random.choice(values) for _ in range(size)]
-
-    # normalisieren
-    w = np.array(weights, dtype=float)
-    if w.sum() <= 0:
-        w = np.ones_like(w)
-    w = w / w.sum()
-
-    # exakte Zählungen mittels Abrunden (floor) + Verteilung der Restplätze nach größtem Anteil
-    target = w * size
-    counts = np.floor(target).astype(int)
-    remainder = size - counts.sum()
-    if remainder > 0:
-        frac = target - np.floor(target)
-        # Indizes nach absteigendem Nachkommaanteil sortieren
-        idxs = np.argsort(-frac)
-        for i in range(remainder):
-            counts[idxs[i % len(idxs)]] += 1
-
-    out = []
-    for val, c in zip(values, counts):
-        out.extend([val] * int(c))
-    # Falls durch Rundung die Länge abweicht, anpassen
-    if len(out) < size:
-        out.extend([values[0]] * (size - len(out)))
-    elif len(out) > size:
-        out = out[:size]
-
-    # Ergebnis deterministisch durch den RNG mischen
-    arr = np.array(out, dtype=object)
-    rng.shuffle(arr)
-    return arr.tolist()
-
 def _maybe_as_text(seq, as_text: bool) -> list:
+    """
+    Eine Hilfsmethode welche Gleitkomma Werte in Strings umwandelt. Kann nützlich sein beim Schreiben der Werte
+    in CSV oder Excel Sheets da hier auf richtige Schreibweise von 1.000 oder längeren Zahlen geachtet wird.
+    (. statt , sepeartor)
+    """
     if not as_text:
         return list(seq)
     out = []
@@ -249,8 +224,11 @@ def _maybe_as_text(seq, as_text: bool) -> list:
 
 def gen_german_account():
     """
-    Generiert:
-    - kontonummer: 10-stellige, linksgepadete Nummer (String) + int
+    Generiert eine realitätsnahe deutsche Kontonummer. Führende 0 ist möglich, da Wert als String zurückgegeben
+    wird.
+
+    :return: Kontonummer
+    :rtype: string
     """
     k_num = "".join(str(random.randint(0,9)) for _ in range(10))
     return k_num
